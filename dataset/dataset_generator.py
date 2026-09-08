@@ -111,14 +111,14 @@ for i in range(0, len(hospital_records)):
             record = hospital_records[i][j]
             line = (record.patient.first_name + "," +
                     record.patient.last_name + "," +
-                    str(record.patient.dob) + "," +
+                    record.patient.dob + "," +
                     record.patient.weight + "," +
                     record.patient.sex + "," +
                     record.patient.postcode + "," +
                     record.patient.phone + "," +
                     record.patient.medicare + "," +
                     record.diagnosis_code + "," +
-                    str(record.visit_date) + "," +
+                    record.visit_date + "," +
                     record.hospital_id + "\n")
             file.write(line)
 
