@@ -1,4 +1,5 @@
 import random
+import sys
 from datetime import datetime, timedelta
 
 class Patient:
@@ -16,15 +17,12 @@ class Patient:
         self.patient_id = str(patient_id)
         self.first_name = first_name
         self.last_name = last_name
-        self.dob = dob
+        self.dob = str(dob).split(" ")[0]
         self.weight = str(weight)
         self.sex = sex
         self.postcode = str(postcode)
         self.phone = str(phone)
         self.medicare = str(medicare)
-
-    def __str__(self):
-        return self.first_name
 
 class Record:
     patient = None
@@ -34,12 +32,9 @@ class Record:
 
     def __init__(self, patient, visit_date, diagnosis_code, hospital_id):
         self.patient = patient
-        self.visit_date = visit_date
+        self.visit_date = str(visit_date).split(" ")[0]
         self.diagnosis_code = str(diagnosis_code)
         self.hospital_id = str(hospital_id)
-
-    def __str__(self):
-        pass
 
 
 
@@ -63,6 +58,21 @@ def get_random_weight(age):
     return random.randint(30, 300)
 
 
+
+num_patients = 100
+num_hospitals = 3
+num_records_per_hospital = 100
+if len(sys.argv) == 4:
+    num_patients = int(sys.argv[1])
+    num_hospitals = int(sys.argv[2])
+    num_records_per_hospital = int(sys.argv[3])
+else:
+    print("Arguments are: <num patients> <num hospitals> <num records per hospital>")
+    print("Defaulting too: 100, 3, 100")
+
+
+
+
 first_names = []
 last_names = []
 with open("names.csv", "r") as names:
@@ -73,7 +83,6 @@ with open("names.csv", "r") as names:
 
 sexes = ["m", "f", "Male", "Female", "male", "female"]
 # Make random patients
-num_patients = 100
 patients = []
 for i in range(0, num_patients):
     first_name = random.choice(first_names)
@@ -88,8 +97,6 @@ for i in range(0, num_patients):
                             weight, sex, postcode, phone, medicare))
 
 # Make multiple records for each patient
-num_hospitals = 3
-num_records_per_hospital = 100
 hospital_records = []
 for h in range(0, num_hospitals):
     records = []
