@@ -59,6 +59,7 @@ def get_random_weight(age):
 
 
 
+random.seed(1)
 num_patients = 100
 num_hospitals = 3
 num_records_per_hospital = 100
