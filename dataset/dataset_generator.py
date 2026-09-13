@@ -17,7 +17,7 @@ class Patient:
         self.patient_id = str(patient_id)
         self.first_name = first_name
         self.last_name = last_name
-        self.dob = str(dob).split(" ")[0]
+        self.dob = dob
         self.weight = str(weight)
         self.sex = sex
         self.postcode = str(postcode)
@@ -32,19 +32,20 @@ class Record:
 
     def __init__(self, patient, visit_date, diagnosis_code, hospital_id):
         self.patient = patient
-        self.visit_date = str(visit_date).split(" ")[0]
+        self.visit_date = visit_date
         self.diagnosis_code = str(diagnosis_code)
         self.hospital_id = str(hospital_id)
 
 
 
-# Random date between 1900 and 2026
-def get_random_date():
-    start = datetime(1900, 1, 1)
-    end = datetime(2026, 1, 1)
+# Random date between start and end
+def get_random_date(start, end):
     delta = end - start
     random_days = random.randrange(delta.days + 1)
     return start + timedelta(days=random_days)
+
+def format_date(date, form):
+    return date.strftime(form)
 
 def get_age(date):
     current_date = datetime.now()
@@ -88,7 +89,7 @@ patients = []
 for i in range(0, num_patients):
     first_name = random.choice(first_names)
     last_name = random.choice(last_names)
-    dob = get_random_date()
+    dob = get_random_date(datetime(1900, 1, 1), datetime(2026, 1, 1))
     weight = get_random_weight(get_age(dob))
     sex = random.choice(sexes)
     postcode = random.randint(2000, 2999)
@@ -102,24 +103,28 @@ hospital_records = []
 for h in range(0, num_hospitals):
     records = []
     for i in range(0, num_records_per_hospital):
-        records.append(Record(random.choice(patients), get_random_date(),
-                                            random.randint(1, 999999), h))
+        records.append(Record(random.choice(patients),
+                              get_random_date(datetime(2000, 1, 1), datetime(2026, 1, 1)),
+                              random.randint(1, 999999), h))
     hospital_records.append(records)
+
+date_formats = ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y", "%e/%m/%Y", "%e-%m-%Y"]
 
 for i in range(0, len(hospital_records)):
     with open("hospital" + str(i + 1) + ".csv", "w") as file:
+        date_format = random.choice(date_formats)
         for j in range(0, len(hospital_records[i])):
             record = hospital_records[i][j]
             line = (record.patient.first_name + "," +
                     record.patient.last_name + "," +
-                    record.patient.dob + "," +
+                    format_date(record.patient.dob, date_format) + "," +
                     record.patient.weight + "," +
                     record.patient.sex + "," +
                     record.patient.postcode + "," +
-                    record.patient.phone + "," +
+                    "0" + record.patient.phone + "," +
                     record.patient.medicare + "," +
                     record.diagnosis_code + "," +
-                    record.visit_date + "," +
+                    format_date(record.visit_date, date_format) + "," +
                     record.hospital_id + "\n")
             file.write(line)
 
