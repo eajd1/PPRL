@@ -108,8 +108,19 @@ for h in range(0, num_hospitals):
                               random.randint(1, 999999), h))
     hospital_records.append(records)
 
-date_formats = ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y", "%e/%m/%Y", "%e-%m-%Y"]
+# Ground Truth
+with open("ground_truth.csv", "w") as file:
+    text = ""
+    for i in range(0, len(hospital_records)):
+        for j in range(0, len(hospital_records[i])):
+            text = text + str(hospital_records[i][j].patient.patient_id) + ","
+        text = text[:-1]
+        text = text + "\n"
+    file.write(text)
 
+# Randomise Data
+date_formats = ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y", "%e/%m/%Y", "%e-%m-%Y"]
+# TODO randomise more (add mistakes)
 for i in range(0, len(hospital_records)):
     with open("hospital" + str(i + 1) + ".csv", "w") as file:
         date_format = random.choice(date_formats)
