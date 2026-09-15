@@ -58,6 +58,85 @@ def get_random_weight(age):
     # TODO have realistic weight/age distribution
     return random.randint(30, 300)
 
+def random_line_order(record, rand):
+    if order == 1:
+        return (record.patient.first_name + "," +
+                record.patient.last_name + "," +
+                format_date(record.patient.dob, date_format) + "," +
+                record.patient.weight + "," +
+                record.patient.sex + "," +
+                record.patient.postcode + "," +
+                "0" + record.patient.phone + "," +
+                record.patient.medicare + "," +
+                record.diagnosis_code + "," +
+                format_date(record.visit_date, date_format) + "," +
+                record.hospital_id + "\n")
+
+    if order == 2:
+        return (record.patient.last_name + "," +
+                record.patient.first_name + "," +
+                format_date(record.patient.dob, date_format) + "," +
+                record.patient.sex + "," +
+                record.patient.weight + "," +
+                record.patient.postcode + "," +
+                "0" + record.patient.phone + "," +
+                record.patient.medicare + "," +
+                record.diagnosis_code + "," +
+                format_date(record.visit_date, date_format) + "," +
+                record.hospital_id + "\n")
+
+    if order == 3:
+        return (record.patient.last_name + "," +
+                record.patient.first_name + "," +
+                "0" + record.patient.phone + "," +
+                record.patient.sex + "," +
+                record.patient.postcode + "," +
+                record.patient.weight + "," +
+                format_date(record.patient.dob, date_format) + "," +
+                record.patient.medicare + "," +
+                format_date(record.visit_date, date_format) + "," +
+                record.diagnosis_code + "," +
+                record.hospital_id + "\n")
+
+    if order == 4:
+        return (record.patient.first_name + "," +
+                record.patient.last_name + "," +
+                "0" + record.patient.phone + "," +
+                record.patient.medicare + "," +
+                format_date(record.patient.dob, date_format) + "," +
+                record.patient.sex + "," +
+                record.patient.weight + "," +
+                record.patient.postcode + "," +
+                record.diagnosis_code + "," +
+                format_date(record.visit_date, date_format) + "," +
+                record.hospital_id + "\n")
+
+    if order == 5:
+        return (record.patient.first_name + "," +
+                record.patient.last_name + "," +
+                record.patient.postcode + "," +
+                record.patient.medicare + "," +
+                "0" + record.patient.phone + "," +
+                format_date(record.patient.dob, date_format) + "," +
+                record.patient.weight + "," +
+                record.patient.sex + "," +
+                format_date(record.visit_date, date_format) + "," +
+                record.diagnosis_code + "," +
+                record.hospital_id + "\n")
+
+    # Default
+    return (record.patient.first_name + "," +
+            record.patient.last_name + "," +
+            format_date(record.patient.dob, date_format) + "," +
+            record.patient.weight + "," +
+            record.patient.sex + "," +
+            record.patient.postcode + "," +
+            "0" + record.patient.phone + "," +
+            record.patient.medicare + "," +
+            record.diagnosis_code + "," +
+            format_date(record.visit_date, date_format) + "," +
+            record.hospital_id + "\n")
+
 
 
 random.seed(1)
@@ -103,8 +182,9 @@ hospital_records = []
 for h in range(0, num_hospitals):
     records = []
     for i in range(0, num_records_per_hospital):
-        records.append(Record(random.choice(patients),
-                              get_random_date(datetime(2000, 1, 1), datetime(2026, 1, 1)),
+        patient = random.choice(patients)
+        records.append(Record(patient,
+                              get_random_date(patient.dob, datetime(2026, 1, 1)),
                               random.randint(1, 999999), h))
     hospital_records.append(records)
 
@@ -122,20 +202,11 @@ with open("ground_truth.csv", "w") as file:
 date_formats = ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y", "%e/%m/%Y", "%e-%m-%Y"]
 # TODO randomise more (add mistakes)
 for i in range(0, len(hospital_records)):
+    order = random.randint(1, 5)
     with open("hospital" + str(i + 1) + ".csv", "w") as file:
         date_format = random.choice(date_formats)
         for j in range(0, len(hospital_records[i])):
             record = hospital_records[i][j]
-            line = (record.patient.first_name + "," +
-                    record.patient.last_name + "," +
-                    format_date(record.patient.dob, date_format) + "," +
-                    record.patient.weight + "," +
-                    record.patient.sex + "," +
-                    record.patient.postcode + "," +
-                    "0" + record.patient.phone + "," +
-                    record.patient.medicare + "," +
-                    record.diagnosis_code + "," +
-                    format_date(record.visit_date, date_format) + "," +
-                    record.hospital_id + "\n")
+            line = random_line_order(record, order)
             file.write(line)
 
