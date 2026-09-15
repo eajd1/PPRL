@@ -55,8 +55,34 @@ def get_age(date):
     )
 
 def get_random_weight(age):
-    # TODO have realistic weight/age distribution
-    return random.randint(30, 300)
+    # 1. Infants (0 to 12 months): 3.5 kg to ~10 kg
+    if age == 0:
+        mean, std_dev = 7.0, 1.5
+    # 2. Toddlers (1 to 2 years): ~10 kg to 14 kg
+    elif age <= 2:
+        mean, std_dev = 12.0, 1.8
+    # 3. Young Children (3 to 5 years): ~14 kg to 19 kg
+    elif age <= 5:
+        mean, std_dev = 16.5, 2.5
+    # 4. Older Children (6 to 11 years)
+    elif age <= 11:
+        mean, std_dev = 32.0, 6.0
+    # 5. Teenagers (12 to 17 years): Massive variance due to growth spurts
+    elif age <= 17:
+        mean, std_dev = 58.0, 10.0
+    # 6. Adults (18+ years): Covers standard adult population distributions
+    else:
+        mean, std_dev = 76.0, 14.0
+
+    # Generate the weight using a normal distribution
+    weight = random.normalvariate(mean, std_dev)
+    
+    # Enforce realistic physiological floor boundaries (just in case of outliers)
+    min_possible_weight = mean - (2.5 * std_dev)
+    if weight < min_possible_weight:
+        weight = min_possible_weight
+        
+    return round(weight, 1)
 
 def hospital_gender_format(gender, rand):
     if gender == "m":
@@ -66,8 +92,8 @@ def hospital_gender_format(gender, rand):
         i = rand % 5
         return ["f", "F", "female", "Female", "FEMALE"][i]
     else:
-        i = rand % 3
-        return ["?", "Unknown", "Unspecified"][i]
+        i = rand % 5
+        return ["", "?", "unspecified", "Unspecified", "Unknown"][i]
 
 def get_record_entry(record, rand):
     return (record.patient.first_name + "," +
