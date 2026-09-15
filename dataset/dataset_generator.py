@@ -69,74 +69,7 @@ def hospital_gender_format(gender, rand):
         i = rand % 3
         return ["?", "Unknown", "Unspecified"][i]
 
-def random_line_order(record, rand):
-    order = rand % 5
-    if order == 1:
-        return (record.patient.first_name + "," +
-                record.patient.last_name + "," +
-                format_date(record.patient.dob, date_format) + "," +
-                record.patient.weight + "," +
-                hospital_gender_format(record.patient.sex, rand) + "," +
-                record.patient.postcode + "," +
-                "0" + record.patient.phone + "," +
-                record.patient.medicare + "," +
-                record.diagnosis_code + "," +
-                format_date(record.visit_date, date_format) + "," +
-                record.hospital_id + "\n")
-
-    if order == 2:
-        return (record.patient.last_name + "," +
-                record.patient.first_name + "," +
-                format_date(record.patient.dob, date_format) + "," +
-                hospital_gender_format(record.patient.sex, rand) + "," +
-                record.patient.weight + "," +
-                record.patient.postcode + "," +
-                "0" + record.patient.phone + "," +
-                record.patient.medicare + "," +
-                record.diagnosis_code + "," +
-                format_date(record.visit_date, date_format) + "," +
-                record.hospital_id + "\n")
-
-    if order == 3:
-        return (record.patient.last_name + "," +
-                record.patient.first_name + "," +
-                "0" + record.patient.phone + "," +
-                hospital_gender_format(record.patient.sex, rand) + "," +
-                record.patient.postcode + "," +
-                record.patient.weight + "," +
-                format_date(record.patient.dob, date_format) + "," +
-                record.patient.medicare + "," +
-                format_date(record.visit_date, date_format) + "," +
-                record.diagnosis_code + "," +
-                record.hospital_id + "\n")
-
-    if order == 4:
-        return (record.patient.first_name + "," +
-                record.patient.last_name + "," +
-                "0" + record.patient.phone + "," +
-                record.patient.medicare + "," +
-                format_date(record.patient.dob, date_format) + "," +
-                hospital_gender_format(record.patient.sex, rand) + "," +
-                record.patient.weight + "," +
-                record.patient.postcode + "," +
-                record.diagnosis_code + "," +
-                format_date(record.visit_date, date_format) + "," +
-                record.hospital_id + "\n")
-
-    if order == 5:
-        return (record.patient.first_name + "," +
-                record.patient.last_name + "," +
-                record.patient.postcode + "," +
-                record.patient.medicare + "," +
-                "0" + record.patient.phone + "," +
-                format_date(record.patient.dob, date_format) + "," +
-                record.patient.weight + "," +
-                hospital_gender_format(record.patient.sex, rand) + "," +
-                format_date(record.visit_date, date_format) + "," +
-                record.diagnosis_code + "," +
-                record.hospital_id + "\n")
-
-    # Default
+def get_record_entry(record, rand):
     return (record.patient.first_name + "," +
             record.patient.last_name + "," +
             format_date(record.patient.dob, date_format) + "," +
@@ -146,8 +79,7 @@ def random_line_order(record, rand):
             "0" + record.patient.phone + "," +
             record.patient.medicare + "," +
             record.diagnosis_code + "," +
-            format_date(record.visit_date, date_format) + "," +
-            record.hospital_id + "\n")
+            format_date(record.visit_date, date_format) + "\n")
 
 
 
@@ -225,6 +157,6 @@ for i in range(0, len(hospital_records)):
         date_format = random.choice(date_formats)
         for j in range(0, len(hospital_records[i])):
             record = hospital_records[i][j]
-            line = random_line_order(record, hospital_rng[i])
+            line = get_record_entry(record, hospital_rng[i])
             file.write(line)
 
