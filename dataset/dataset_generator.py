@@ -58,13 +58,25 @@ def get_random_weight(age):
     # TODO have realistic weight/age distribution
     return random.randint(30, 300)
 
+def hospital_gender_format(gender, rand):
+    if gender == "m":
+        i = rand % 5
+        return ["m", "M", "male", "Male", "MALE"][i]
+    elif gender == "f":
+        i = rand % 5
+        return ["f", "F", "female", "Female", "FEMALE"][i]
+    else:
+        i = rand % 3
+        return ["?", "Unknown", "Unspecified"][i]
+
 def random_line_order(record, rand):
+    order = rand % 5
     if order == 1:
         return (record.patient.first_name + "," +
                 record.patient.last_name + "," +
                 format_date(record.patient.dob, date_format) + "," +
                 record.patient.weight + "," +
-                record.patient.sex + "," +
+                hospital_gender_format(record.patient.sex, rand) + "," +
                 record.patient.postcode + "," +
                 "0" + record.patient.phone + "," +
                 record.patient.medicare + "," +
@@ -76,7 +88,7 @@ def random_line_order(record, rand):
         return (record.patient.last_name + "," +
                 record.patient.first_name + "," +
                 format_date(record.patient.dob, date_format) + "," +
-                record.patient.sex + "," +
+                hospital_gender_format(record.patient.sex, rand) + "," +
                 record.patient.weight + "," +
                 record.patient.postcode + "," +
                 "0" + record.patient.phone + "," +
@@ -89,7 +101,7 @@ def random_line_order(record, rand):
         return (record.patient.last_name + "," +
                 record.patient.first_name + "," +
                 "0" + record.patient.phone + "," +
-                record.patient.sex + "," +
+                hospital_gender_format(record.patient.sex, rand) + "," +
                 record.patient.postcode + "," +
                 record.patient.weight + "," +
                 format_date(record.patient.dob, date_format) + "," +
@@ -104,7 +116,7 @@ def random_line_order(record, rand):
                 "0" + record.patient.phone + "," +
                 record.patient.medicare + "," +
                 format_date(record.patient.dob, date_format) + "," +
-                record.patient.sex + "," +
+                hospital_gender_format(record.patient.sex, rand) + "," +
                 record.patient.weight + "," +
                 record.patient.postcode + "," +
                 record.diagnosis_code + "," +
@@ -119,7 +131,7 @@ def random_line_order(record, rand):
                 "0" + record.patient.phone + "," +
                 format_date(record.patient.dob, date_format) + "," +
                 record.patient.weight + "," +
-                record.patient.sex + "," +
+                hospital_gender_format(record.patient.sex, rand) + "," +
                 format_date(record.visit_date, date_format) + "," +
                 record.diagnosis_code + "," +
                 record.hospital_id + "\n")
@@ -129,7 +141,7 @@ def random_line_order(record, rand):
             record.patient.last_name + "," +
             format_date(record.patient.dob, date_format) + "," +
             record.patient.weight + "," +
-            record.patient.sex + "," +
+            hospital_gender_format(record.patient.sex, rand) + "," +
             record.patient.postcode + "," +
             "0" + record.patient.phone + "," +
             record.patient.medicare + "," +
@@ -139,18 +151,22 @@ def random_line_order(record, rand):
 
 
 
-random.seed(1)
+seed = 1
 num_patients = 100
 num_hospitals = 3
 num_records_per_hospital = 100
-if len(sys.argv) == 4:
-    num_patients = int(sys.argv[1])
-    num_hospitals = int(sys.argv[2])
-    num_records_per_hospital = int(sys.argv[3])
+if len(sys.argv) == 2:
+    seed = int(sys.argv[1])
+elif len(sys.argv) == 5:
+    seed = int(sys.argv[1])
+    num_patients = int(sys.argv[2])
+    num_hospitals = int(sys.argv[3])
+    num_records_per_hospital = int(sys.argv[4])
 else:
-    print("Arguments are: <num patients> <num hospitals> <num records per hospital>")
-    print("Defaulting too: 100, 3, 100")
+    print("Arguments are: <seed> <num patients> <num hospitals> <num records per hospital>")
+    print("Defaulting too: 1, 100, 3, 100")
 
+random.seed(seed)
 
 
 
@@ -162,7 +178,6 @@ with open("names.csv", "r") as names:
         first_names.append(first_last[0])
         last_names.append(first_last[1])
 
-sexes = ["m", "f", "Male", "Female", "male", "female"]
 # Make random patients
 patients = []
 for i in range(0, num_patients):
@@ -170,12 +185,16 @@ for i in range(0, num_patients):
     last_name = random.choice(last_names)
     dob = get_random_date(datetime(1900, 1, 1), datetime(2026, 1, 1))
     weight = get_random_weight(get_age(dob))
-    sex = random.choice(sexes)
+    sex = random.choice(["m", "f", "?"])
     postcode = random.randint(2000, 2999)
     phone = random.randint(400000000, 499999999)
     medicare = random.randint(1000000000, 9999999999)
     patients.append(Patient(i, first_name, last_name, dob,
                             weight, sex, postcode, phone, medicare))
+
+hospital_rng = []
+for h in range(0, num_hospitals):
+    hospital_rng.append(random.randint(0, num_hospitals * 1000))
 
 # Make multiple records for each patient
 hospital_records = []
@@ -202,11 +221,10 @@ with open("ground_truth.csv", "w") as file:
 date_formats = ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y", "%e/%m/%Y", "%e-%m-%Y"]
 # TODO randomise more (add mistakes)
 for i in range(0, len(hospital_records)):
-    order = random.randint(1, 5)
     with open("hospital" + str(i + 1) + ".csv", "w") as file:
         date_format = random.choice(date_formats)
         for j in range(0, len(hospital_records[i])):
             record = hospital_records[i][j]
-            line = random_line_order(record, order)
+            line = random_line_order(record, hospital_rng[i])
             file.write(line)
 
