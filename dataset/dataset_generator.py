@@ -45,7 +45,7 @@ def get_random_date(start, end):
     return start + timedelta(days=random_days)
 
 def format_date(date, form):
-    return date.strftime(form)
+    return date.strftime(form).strip()
 
 def get_age(date):
     current_date = datetime.now()
@@ -95,17 +95,17 @@ def hospital_gender_format(gender, rand):
         i = rand % 5
         return ["", "?", "unspecified", "Unspecified", "Unknown"][i]
 
-def get_record_entry(record, rand):
-    return ((record.patient.first_name if random.random() > deletion_rate else "") + "," +
-            (record.patient.last_name if random.random() > deletion_rate else "") + "," +
-            (format_date(record.patient.dob, date_format) if random.random() > deletion_rate else "") + "," +
+def get_record_entry(record, rand, date):
+    return ((random.choice(record.patient.first_name) if random.random() > deletion_rate else "") + "," +
+            (random.choice(record.patient.last_name) if random.random() > deletion_rate else "") + "," +
+            (format_date(record.patient.dob, date) if random.random() > deletion_rate else "") + "," +
             (record.patient.weight if random.random() > deletion_rate else "") + "," +
             (hospital_gender_format(record.patient.sex, rand) if random.random() > deletion_rate else "") + "," +
             (record.patient.postcode if random.random() > deletion_rate else "") + "," +
             (("0" + record.patient.phone) if random.random() > deletion_rate else "") + "," +
             (record.patient.medicare if random.random() > deletion_rate else "") + "," +
             (record.diagnosis_code if random.random() > deletion_rate else "") + "," +
-            (format_date(record.visit_date, date_format) if random.random() > deletion_rate else "") + "\n")
+            (format_date(record.visit_date, date) if random.random() > deletion_rate else "") + "\n")
 
 
 
@@ -131,12 +131,13 @@ random.seed(seed)
 
 
 first_names = []
-last_names = []
-with open("names.csv", "r") as names:
+with open("first_names.csv", "r") as names:
     for line in names:
-        first_last = line.strip().split(",")
-        first_names.append(first_last[0])
-        last_names.append(first_last[1])
+        first_names.append(line.strip().split(","))
+last_names = []
+with open("last_names.csv", "r") as names:
+    for line in names:
+        last_names.append(line.strip().split(","))
 
 # Make random patients
 patients = []
@@ -185,6 +186,6 @@ for i in range(0, len(hospital_records)):
         date_format = random.choice(date_formats)
         for j in range(0, len(hospital_records[i])):
             record = hospital_records[i][j]
-            line = get_record_entry(record, hospital_rng[i])
+            line = get_record_entry(record, hospital_rng[i], date_format)
             file.write(line)
 
