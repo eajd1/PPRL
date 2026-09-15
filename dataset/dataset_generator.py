@@ -116,13 +116,14 @@ num_records_per_hospital = 100
 deletion_rate = 0.05
 if len(sys.argv) == 2:
     seed = int(sys.argv[1])
-elif len(sys.argv) == 5:
+elif len(sys.argv) == 6:
     seed = int(sys.argv[1])
     num_patients = int(sys.argv[2])
     num_hospitals = int(sys.argv[3])
     num_records_per_hospital = int(sys.argv[4])
+    deletion_rate = float(sys.argv[5])
 else:
-    print("Arguments are: <seed> <num patients> <num hospitals> <num records per hospital>")
+    print("Arguments are: <seed> <num patients> <num hospitals> <num records per hospital> <data deletion rate>")
     print("Defaulting too: 1, 100, 3, 100")
 
 random.seed(seed)
