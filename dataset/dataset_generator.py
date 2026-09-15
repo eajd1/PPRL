@@ -96,16 +96,16 @@ def hospital_gender_format(gender, rand):
         return ["", "?", "unspecified", "Unspecified", "Unknown"][i]
 
 def get_record_entry(record, rand):
-    return (record.patient.first_name + "," +
-            record.patient.last_name + "," +
-            format_date(record.patient.dob, date_format) + "," +
-            record.patient.weight + "," +
-            hospital_gender_format(record.patient.sex, rand) + "," +
-            record.patient.postcode + "," +
-            "0" + record.patient.phone + "," +
-            record.patient.medicare + "," +
-            record.diagnosis_code + "," +
-            format_date(record.visit_date, date_format) + "\n")
+    return ((record.patient.first_name if random.random() > deletion_rate else "") + "," +
+            (record.patient.last_name if random.random() > deletion_rate else "") + "," +
+            (format_date(record.patient.dob, date_format) if random.random() > deletion_rate else "") + "," +
+            (record.patient.weight if random.random() > deletion_rate else "") + "," +
+            (hospital_gender_format(record.patient.sex, rand) if random.random() > deletion_rate else "") + "," +
+            (record.patient.postcode if random.random() > deletion_rate else "") + "," +
+            (("0" + record.patient.phone) if random.random() > deletion_rate else "") + "," +
+            (record.patient.medicare if random.random() > deletion_rate else "") + "," +
+            (record.diagnosis_code if random.random() > deletion_rate else "") + "," +
+            (format_date(record.visit_date, date_format) if random.random() > deletion_rate else "") + "\n")
 
 
 
@@ -113,6 +113,7 @@ seed = 1
 num_patients = 100
 num_hospitals = 3
 num_records_per_hospital = 100
+deletion_rate = 0.05
 if len(sys.argv) == 2:
     seed = int(sys.argv[1])
 elif len(sys.argv) == 5:
