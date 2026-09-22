@@ -1,0 +1,99 @@
+{
+  "source_file": "hospital3.csv",
+  "input_had_header": false,
+  "hospital_id": "2",
+  "input_rows": 100,
+  "cleaned_visit_rows": 100,
+  "exact_duplicate_rows_removed": 0,
+  "missing_values_before_cleaning": {
+    "first_name": 0,
+    "last_name": 0,
+    "date_of_birth": 0,
+    "local_patient_id": 0,
+    "sex": 0,
+    "postcode": 0,
+    "phone": 0,
+    "fake_medicare_id": 0,
+    "diagnosis_code": 0,
+    "visit_date": 0,
+    "hospital_id": 0
+  },
+  "missing_values_after_cleaning": {
+    "local_patient_id": 0,
+    "first_name": 0,
+    "last_name": 0,
+    "date_of_birth": 0,
+    "sex": 0,
+    "postcode": 0,
+    "phone": 0,
+    "fake_medicare_id": 0,
+    "diagnosis_code": 0,
+    "visit_date": 0,
+    "hospital_id": 0
+  },
+  "invalid_values_replaced_with_blank": {
+    "first_name": 0,
+    "last_name": 0,
+    "date_of_birth": 0,
+    "sex": 0,
+    "postcode": 0,
+    "phone": 0,
+    "fake_medicare_id": 0
+  },
+  "values_changed_by_standardisation": {
+    "first_name": 100,
+    "last_name": 100,
+    "date_of_birth": 100,
+    "sex": 100,
+    "postcode": 0,
+    "phone": 100,
+    "fake_medicare_id": 0
+  },
+  "preserved_columns": [
+    "local_patient_id",
+    "hospital_id",
+    "diagnosis_code",
+    "visit_date"
+  ],
+  "unique_local_patient_ids": 56,
+  "additional_visit_rows_retained": 44,
+  "local_patient_ids_with_multiple_rows": 28,
+  "local_patient_ids_with_conflicting_linkage_values": 5,
+  "conflicts_by_linkage_field": {
+    "first_name": 5,
+    "last_name": 5,
+    "date_of_birth": 5,
+    "sex": 2,
+    "postcode": 5,
+    "phone": 5,
+    "fake_medicare_id": 5
+  },
+  "privacy_note": "The cleaned CSV contains identifying patient data and must remain local.",
+  "cleaned_file": "hospital3_cleaned.csv",
+  "linkage_patient_file": "hospital3_linkage_patients.csv",
+  "patient_consolidation": {
+    "patient_linkage_rows": 56,
+    "visit_rows_collapsed": 44,
+    "patients_with_conflicting_linkage_values": 5,
+    "patients_with_unresolved_ties": 1,
+    "fields_resolved_using_unique_majority": {
+      "first_name": 4,
+      "last_name": 4,
+      "date_of_birth": 4,
+      "sex": 1,
+      "postcode": 4,
+      "phone": 4,
+      "fake_medicare_id": 4
+    },
+    "fields_left_blank_due_to_tie": {
+      "first_name": 1,
+      "last_name": 1,
+      "date_of_birth": 1,
+      "sex": 1,
+      "postcode": 1,
+      "phone": 1,
+      "fake_medicare_id": 1
+    },
+    "consolidation_rule": "Use the only nonblank value when consistent; use a unique most-frequent value when available; leave tied values blank."
+  }
+}
