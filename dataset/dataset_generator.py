@@ -36,8 +36,9 @@ class Record:
     diagnosis = ""
     treatment = ""
     note = ""
+    phone = ""
 
-    def __init__(self, patient, visit_date, hospital_id, admission_date, discharge_date, diagnosis, treatment, note):
+    def __init__(self, patient, visit_date, hospital_id, admission_date, discharge_date, diagnosis, treatment, note, phone):
         self.patient = patient
         self.visit_date = visit_date
         self.hospital_id = str(hospital_id)
@@ -46,6 +47,7 @@ class Record:
         self.diagnosis = diagnosis
         self.treatment = treatment
         self.note = note
+        self.phone = phone
 
 
 
@@ -98,7 +100,8 @@ def get_record_entry(record, rand, date):
             (format_date(record.discharge_date, date) if random.random() > deletion_rate else "") + "," +
             (record.diagnosis if random.random() > deletion_rate else "") + "," +
             (record.treatment if random.random() > deletion_rate else "") + "," +
-            (record.note if random.random() > deletion_rate else "") + "\n")
+            (record.note if random.random() > deletion_rate else "") + "," +
+            (record.phone if random.random() > deletion_rate else "") + "\n")
 
 
 seed = 1
@@ -149,7 +152,7 @@ for i in range(0, num_patients):
 
 hospital_rng = []
 for h in range(0, num_hospitals):
-    hospital_rng.append(random.randint(0, num_hospitals * 1000))
+    hospital_rng.append(random.randint(400000000, 499999999)) # Also acts as hospital phone
 
 # Make multiple records for each patient
 hospital_records = []
@@ -166,7 +169,8 @@ for h in range(0, num_hospitals):
                               get_random_date(visit_date, datetime(2026, 1, 1)) if admitted else "",
                               "diagnosis" + random_string(hospital_rng[h] % 5 * 10),
                               "treatment" + random_string(hospital_rng[h] % 5 * 10),
-                              random_string(hospital_rng[h] % 5 * 30)
+                              random_string(hospital_rng[h] % 5 * 30),
+                              "0" + str(hospital_rng[h])
                               ))
     hospital_records.append(records)
 
