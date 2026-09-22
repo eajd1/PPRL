@@ -7,18 +7,18 @@ class Patient:
     first_name = ""
     last_name = ""
     dob = ""
-    weight = ""
     sex = ""
     postcode = ""
     phone = ""
     medicare = ""
+    email = "" #TODO
+    middle_name = "" #TODO
 
-    def __init__(self, patient_id, first_name, last_name, dob, weight, sex, postcode, phone, medicare):
+    def __init__(self, patient_id, first_name, last_name, dob, sex, postcode, phone, medicare):
         self.patient_id = str(patient_id)
         self.first_name = first_name
         self.last_name = last_name
         self.dob = dob
-        self.weight = str(weight)
         self.sex = sex
         self.postcode = str(postcode)
         self.phone = str(phone)
@@ -27,14 +27,19 @@ class Patient:
 class Record:
     patient = None
     visit_date = ""
-    diagnosis_code = ""
     hospital_id = ""
+    admission_date = ""
+    discharge_date = ""
+    diagnosis_description = "" #TODO
+    treatment_description = "" #TODO
+    note = "" #TODO
 
-    def __init__(self, patient, visit_date, diagnosis_code, hospital_id):
+    def __init__(self, patient, visit_date, hospital_id, admission_date, discharge_date):
         self.patient = patient
         self.visit_date = visit_date
-        self.diagnosis_code = str(diagnosis_code)
         self.hospital_id = str(hospital_id)
+        self.admission_date = admission_date
+        self.discharge_date = discharge_date
 
 
 
@@ -45,7 +50,10 @@ def get_random_date(start, end):
     return start + timedelta(days=random_days)
 
 def format_date(date, form):
-    return date.strftime(form).strip()
+    try:
+        return date.strftime(form).strip()
+    except:
+        return ""
 
 def get_age(date):
     current_date = datetime.now()
@@ -53,36 +61,6 @@ def get_age(date):
         (current_date.month, current_date.day) < 
         (date.month, date.day)
     )
-
-def get_random_weight(age):
-    # 1. Infants (0 to 12 months): 3.5 kg to ~10 kg
-    if age == 0:
-        mean, std_dev = 7.0, 1.5
-    # 2. Toddlers (1 to 2 years): ~10 kg to 14 kg
-    elif age <= 2:
-        mean, std_dev = 12.0, 1.8
-    # 3. Young Children (3 to 5 years): ~14 kg to 19 kg
-    elif age <= 5:
-        mean, std_dev = 16.5, 2.5
-    # 4. Older Children (6 to 11 years)
-    elif age <= 11:
-        mean, std_dev = 32.0, 6.0
-    # 5. Teenagers (12 to 17 years): Massive variance due to growth spurts
-    elif age <= 17:
-        mean, std_dev = 58.0, 10.0
-    # 6. Adults (18+ years): Covers standard adult population distributions
-    else:
-        mean, std_dev = 76.0, 14.0
-
-    # Generate the weight using a normal distribution
-    weight = random.normalvariate(mean, std_dev)
-    
-    # Enforce realistic physiological floor boundaries (just in case of outliers)
-    min_possible_weight = mean - (2.5 * std_dev)
-    if weight < min_possible_weight:
-        weight = min_possible_weight
-        
-    return round(weight, 1)
 
 def hospital_gender_format(gender, rand):
     if gender == "m":
@@ -99,13 +77,13 @@ def get_record_entry(record, rand, date):
     return ((random.choice(record.patient.first_name) if random.random() > deletion_rate else "") + "," +
             (random.choice(record.patient.last_name) if random.random() > deletion_rate else "") + "," +
             (format_date(record.patient.dob, date) if random.random() > deletion_rate else "") + "," +
-            (record.patient.weight if random.random() > deletion_rate else "") + "," +
             (hospital_gender_format(record.patient.sex, rand) if random.random() > deletion_rate else "") + "," +
             (record.patient.postcode if random.random() > deletion_rate else "") + "," +
             (("0" + record.patient.phone) if random.random() > deletion_rate else "") + "," +
             (record.patient.medicare if random.random() > deletion_rate else "") + "," +
-            (record.diagnosis_code if random.random() > deletion_rate else "") + "," +
-            (format_date(record.visit_date, date) if random.random() > deletion_rate else "") + "\n")
+            (format_date(record.visit_date, date) if random.random() > deletion_rate else "") + "," +
+            (format_date(record.admission_date, date) if random.random() > deletion_rate else "") + "," +
+            (format_date(record.discharge_date, date) if random.random() > deletion_rate else "") + "\n")
 
 
 
@@ -114,6 +92,7 @@ num_patients = 100
 num_hospitals = 3
 num_records_per_hospital = 100
 deletion_rate = 0.05
+admission_rate = 0.1
 if len(sys.argv) == 2:
     seed = int(sys.argv[1])
 elif len(sys.argv) == 6:
@@ -145,13 +124,12 @@ for i in range(0, num_patients):
     first_name = random.choice(first_names)
     last_name = random.choice(last_names)
     dob = get_random_date(datetime(1900, 1, 1), datetime(2026, 1, 1))
-    weight = get_random_weight(get_age(dob))
     sex = random.choice(["m", "f", "?"])
     postcode = random.randint(2000, 2999)
     phone = random.randint(400000000, 499999999)
     medicare = random.randint(1000000000, 9999999999)
     patients.append(Patient(i, first_name, last_name, dob,
-                            weight, sex, postcode, phone, medicare))
+                            sex, postcode, phone, medicare))
 
 hospital_rng = []
 for h in range(0, num_hospitals):
@@ -163,9 +141,13 @@ for h in range(0, num_hospitals):
     records = []
     for i in range(0, num_records_per_hospital):
         patient = random.choice(patients)
+        visit_date = get_random_date(patient.dob, datetime(2026, 1, 1))
+        admitted = random.random() < admission_rate
         records.append(Record(patient,
-                              get_random_date(patient.dob, datetime(2026, 1, 1)),
-                              random.randint(1, 999999), h))
+                              visit_date,
+                              h,
+                              visit_date if admitted else "",
+                              get_random_date(visit_date, datetime(2026, 1, 1)) if admitted else ""))
     hospital_records.append(records)
 
 # Ground Truth
