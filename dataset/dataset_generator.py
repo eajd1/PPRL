@@ -1,4 +1,5 @@
 import random
+import string
 import sys
 from datetime import datetime, timedelta
 
@@ -11,10 +12,10 @@ class Patient:
     postcode = ""
     phone = ""
     medicare = ""
-    email = "" #TODO
-    middle_name = "" #TODO
+    email = ""
+    middle_name = ""
 
-    def __init__(self, patient_id, first_name, last_name, dob, sex, postcode, phone, medicare):
+    def __init__(self, patient_id, first_name, last_name, dob, sex, postcode, phone, medicare, email, middle_name):
         self.patient_id = str(patient_id)
         self.first_name = first_name
         self.last_name = last_name
@@ -23,6 +24,8 @@ class Patient:
         self.postcode = str(postcode)
         self.phone = str(phone)
         self.medicare = str(medicare)
+        self.email = email
+        self.middle_name = middle_name
 
 class Record:
     patient = None
@@ -30,16 +33,19 @@ class Record:
     hospital_id = ""
     admission_date = ""
     discharge_date = ""
-    diagnosis_description = "" #TODO
-    treatment_description = "" #TODO
-    note = "" #TODO
+    diagnosis = ""
+    treatment = ""
+    note = ""
 
-    def __init__(self, patient, visit_date, hospital_id, admission_date, discharge_date):
+    def __init__(self, patient, visit_date, hospital_id, admission_date, discharge_date, diagnosis, treatment, note):
         self.patient = patient
         self.visit_date = visit_date
         self.hospital_id = str(hospital_id)
         self.admission_date = admission_date
         self.discharge_date = discharge_date
+        self.diagnosis = diagnosis
+        self.treatment = treatment
+        self.note = note
 
 
 
@@ -62,6 +68,10 @@ def get_age(date):
         (date.month, date.day)
     )
 
+def random_string(length):
+    characters = string.ascii_letters
+    return "".join(random.choices(characters, k=length))
+
 def hospital_gender_format(gender, rand):
     if gender == "m":
         i = rand % 5
@@ -76,6 +86,8 @@ def hospital_gender_format(gender, rand):
 def get_record_entry(record, rand, date):
     return ((random.choice(record.patient.first_name) if random.random() > deletion_rate else "") + "," +
             (random.choice(record.patient.last_name) if random.random() > deletion_rate else "") + "," +
+            (random.choice(record.patient.middle_name) if random.random() > deletion_rate else "") + "," +
+            (record.patient.email if random.random() > deletion_rate else "") + "," +
             (format_date(record.patient.dob, date) if random.random() > deletion_rate else "") + "," +
             (hospital_gender_format(record.patient.sex, rand) if random.random() > deletion_rate else "") + "," +
             (record.patient.postcode if random.random() > deletion_rate else "") + "," +
@@ -83,8 +95,10 @@ def get_record_entry(record, rand, date):
             (record.patient.medicare if random.random() > deletion_rate else "") + "," +
             (format_date(record.visit_date, date) if random.random() > deletion_rate else "") + "," +
             (format_date(record.admission_date, date) if random.random() > deletion_rate else "") + "," +
-            (format_date(record.discharge_date, date) if random.random() > deletion_rate else "") + "\n")
-
+            (format_date(record.discharge_date, date) if random.random() > deletion_rate else "") + "," +
+            (record.diagnosis if random.random() > deletion_rate else "") + "," +
+            (record.treatment if random.random() > deletion_rate else "") + "," +
+            (record.note if random.random() > deletion_rate else "") + "\n")
 
 
 seed = 1
@@ -128,8 +142,10 @@ for i in range(0, num_patients):
     postcode = random.randint(2000, 2999)
     phone = random.randint(400000000, 499999999)
     medicare = random.randint(1000000000, 9999999999)
-    patients.append(Patient(i, first_name, last_name, dob,
-                            sex, postcode, phone, medicare))
+    email = random_string(10) + "@" + random_string(6) + ".com"
+    middle_name = random.choice(first_names) if random.random() > 0.5 else random.choice(last_names)
+    patients.append(Patient(i, first_name, last_name, dob, sex,
+                            postcode, phone, medicare, email, middle_name))
 
 hospital_rng = []
 for h in range(0, num_hospitals):
@@ -147,7 +163,11 @@ for h in range(0, num_hospitals):
                               visit_date,
                               h,
                               visit_date if admitted else "",
-                              get_random_date(visit_date, datetime(2026, 1, 1)) if admitted else ""))
+                              get_random_date(visit_date, datetime(2026, 1, 1)) if admitted else "",
+                              "diagnosis" + random_string(hospital_rng[h] % 5 * 10),
+                              "treatment" + random_string(hospital_rng[h] % 5 * 10),
+                              random_string(hospital_rng[h] % 5 * 30)
+                              ))
     hospital_records.append(records)
 
 # Ground Truth
