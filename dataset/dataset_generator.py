@@ -1,4 +1,5 @@
 import random
+import string
 import sys
 from datetime import datetime, timedelta
 
@@ -7,34 +8,46 @@ class Patient:
     first_name = ""
     last_name = ""
     dob = ""
-    weight = ""
     sex = ""
     postcode = ""
     phone = ""
     medicare = ""
+    email = ""
+    middle_name = ""
 
-    def __init__(self, patient_id, first_name, last_name, dob, weight, sex, postcode, phone, medicare):
+    def __init__(self, patient_id, first_name, last_name, dob, sex, postcode, phone, medicare, email, middle_name):
         self.patient_id = str(patient_id)
         self.first_name = first_name
         self.last_name = last_name
         self.dob = dob
-        self.weight = str(weight)
         self.sex = sex
         self.postcode = str(postcode)
         self.phone = str(phone)
         self.medicare = str(medicare)
+        self.email = email
+        self.middle_name = middle_name
 
 class Record:
     patient = None
     visit_date = ""
-    diagnosis_code = ""
     hospital_id = ""
+    admission_date = ""
+    discharge_date = ""
+    diagnosis = ""
+    treatment = ""
+    note = ""
+    phone = ""
 
-    def __init__(self, patient, visit_date, diagnosis_code, hospital_id):
+    def __init__(self, patient, visit_date, hospital_id, admission_date, discharge_date, diagnosis, treatment, note, phone):
         self.patient = patient
         self.visit_date = visit_date
-        self.diagnosis_code = str(diagnosis_code)
         self.hospital_id = str(hospital_id)
+        self.admission_date = admission_date
+        self.discharge_date = discharge_date
+        self.diagnosis = diagnosis
+        self.treatment = treatment
+        self.note = note
+        self.phone = phone
 
 
 
@@ -45,7 +58,10 @@ def get_random_date(start, end):
     return start + timedelta(days=random_days)
 
 def format_date(date, form):
-    return date.strftime(form)
+    try:
+        return date.strftime(form).strip()
+    except:
+        return ""
 
 def get_age(date):
     current_date = datetime.now()
@@ -54,77 +70,128 @@ def get_age(date):
         (date.month, date.day)
     )
 
-def get_random_weight(age):
-    # TODO have realistic weight/age distribution
-    return random.randint(30, 300)
+def random_string(length):
+    characters = string.ascii_letters
+    return "".join(random.choices(characters, k=length))
+
+def hospital_gender_format(gender, rand):
+    if gender == "m":
+        i = rand % 5
+        return ["m", "M", "male", "Male", "MALE"][i]
+    elif gender == "f":
+        i = rand % 5
+        return ["f", "F", "female", "Female", "FEMALE"][i]
+    else:
+        i = rand % 5
+        return ["", "?", "unspecified", "Unspecified", "Unknown"][i]
+
+def get_record_entry(record, rand, date):
+    return ((random.choice(record.patient.first_name) if random.random() > deletion_rate else "") + "," +
+            (random.choice(record.patient.last_name) if random.random() > deletion_rate else "") + "," +
+            (random.choice(record.patient.middle_name) if random.random() > deletion_rate else "") + "," +
+            (record.patient.email if random.random() > deletion_rate else "") + "," +
+            (format_date(record.patient.dob, date) if random.random() > deletion_rate else "") + "," +
+            (hospital_gender_format(record.patient.sex, rand) if random.random() > deletion_rate else "") + "," +
+            (record.patient.postcode if random.random() > deletion_rate else "") + "," +
+            (("0" + record.patient.phone) if random.random() > deletion_rate else "") + "," +
+            (record.patient.medicare if random.random() > deletion_rate else "") + "," +
+            (format_date(record.visit_date, date) if random.random() > deletion_rate else "") + "," +
+            (format_date(record.admission_date, date) if random.random() > deletion_rate else "") + "," +
+            (format_date(record.discharge_date, date) if random.random() > deletion_rate else "") + "," +
+            (record.diagnosis if random.random() > deletion_rate else "") + "," +
+            (record.treatment if random.random() > deletion_rate else "") + "," +
+            (record.note if random.random() > deletion_rate else "") + "," +
+            (record.phone if random.random() > deletion_rate else "") + "\n")
 
 
-
-random.seed(1)
+seed = 1
 num_patients = 100
 num_hospitals = 3
 num_records_per_hospital = 100
-if len(sys.argv) == 4:
-    num_patients = int(sys.argv[1])
-    num_hospitals = int(sys.argv[2])
-    num_records_per_hospital = int(sys.argv[3])
+deletion_rate = 0.05
+admission_rate = 0.1
+if len(sys.argv) == 2:
+    seed = int(sys.argv[1])
+elif len(sys.argv) == 6:
+    seed = int(sys.argv[1])
+    num_patients = int(sys.argv[2])
+    num_hospitals = int(sys.argv[3])
+    num_records_per_hospital = int(sys.argv[4])
+    deletion_rate = float(sys.argv[5])
 else:
-    print("Arguments are: <num patients> <num hospitals> <num records per hospital>")
-    print("Defaulting too: 100, 3, 100")
+    print("Arguments are: <seed> <num patients> <num hospitals> <num records per hospital> <data deletion rate>")
+    print("Defaulting too: 1, 100, 3, 100")
 
+random.seed(seed)
 
 
 
 first_names = []
-last_names = []
-with open("names.csv", "r") as names:
+with open("first_names.csv", "r") as names:
     for line in names:
-        first_last = line.strip().split(",")
-        first_names.append(first_last[0])
-        last_names.append(first_last[1])
+        first_names.append(line.strip().split(","))
+last_names = []
+with open("last_names.csv", "r") as names:
+    for line in names:
+        last_names.append(line.strip().split(","))
 
-sexes = ["m", "f", "Male", "Female", "male", "female"]
 # Make random patients
 patients = []
 for i in range(0, num_patients):
     first_name = random.choice(first_names)
     last_name = random.choice(last_names)
     dob = get_random_date(datetime(1900, 1, 1), datetime(2026, 1, 1))
-    weight = get_random_weight(get_age(dob))
-    sex = random.choice(sexes)
+    sex = random.choice(["m", "f", "?"])
     postcode = random.randint(2000, 2999)
     phone = random.randint(400000000, 499999999)
     medicare = random.randint(1000000000, 9999999999)
-    patients.append(Patient(i, first_name, last_name, dob,
-                            weight, sex, postcode, phone, medicare))
+    email = random_string(10) + "@" + random_string(6) + ".com"
+    middle_name = random.choice(first_names) if random.random() > 0.5 else random.choice(last_names)
+    patients.append(Patient(i, first_name, last_name, dob, sex,
+                            postcode, phone, medicare, email, middle_name))
+
+hospital_rng = []
+for h in range(0, num_hospitals):
+    hospital_rng.append(random.randint(400000000, 499999999)) # Also acts as hospital phone
 
 # Make multiple records for each patient
 hospital_records = []
 for h in range(0, num_hospitals):
     records = []
     for i in range(0, num_records_per_hospital):
-        records.append(Record(random.choice(patients),
-                              get_random_date(datetime(2000, 1, 1), datetime(2026, 1, 1)),
-                              random.randint(1, 999999), h))
+        patient = random.choice(patients)
+        visit_date = get_random_date(patient.dob, datetime(2026, 1, 1))
+        admitted = random.random() < admission_rate
+        records.append(Record(patient,
+                              visit_date,
+                              h,
+                              visit_date if admitted else "",
+                              get_random_date(visit_date, datetime(2026, 1, 1)) if admitted else "",
+                              "diagnosis" + random_string(hospital_rng[h] % 5 * 10),
+                              "treatment" + random_string(hospital_rng[h] % 5 * 10),
+                              random_string(hospital_rng[h] % 5 * 30),
+                              "0" + str(hospital_rng[h])
+                              ))
     hospital_records.append(records)
 
-date_formats = ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y", "%e/%m/%Y", "%e-%m-%Y"]
+# Ground Truth
+with open("ground_truth.csv", "w") as file:
+    text = ""
+    for i in range(0, len(hospital_records)):
+        for j in range(0, len(hospital_records[i])):
+            text = text + str(hospital_records[i][j].patient.patient_id) + ","
+        text = text[:-1]
+        text = text + "\n"
+    file.write(text)
 
+# Randomise Data
+date_formats = ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y", "%e/%m/%Y", "%e-%m-%Y"]
+# TODO randomise more (add mistakes)
 for i in range(0, len(hospital_records)):
     with open("hospital" + str(i + 1) + ".csv", "w") as file:
         date_format = random.choice(date_formats)
         for j in range(0, len(hospital_records[i])):
             record = hospital_records[i][j]
-            line = (record.patient.first_name + "," +
-                    record.patient.last_name + "," +
-                    format_date(record.patient.dob, date_format) + "," +
-                    record.patient.weight + "," +
-                    record.patient.sex + "," +
-                    record.patient.postcode + "," +
-                    "0" + record.patient.phone + "," +
-                    record.patient.medicare + "," +
-                    record.diagnosis_code + "," +
-                    format_date(record.visit_date, date_format) + "," +
-                    record.hospital_id + "\n")
+            line = get_record_entry(record, hospital_rng[i], date_format)
             file.write(line)
 
