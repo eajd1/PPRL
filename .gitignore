@@ -221,3 +221,7 @@ __marimo__/
 /src/data/cleaned/
 /src/data/linkage_patients/
 /src/data/cleaning_reports/
+
+secrets/
+/src/data/tokens/
+/src/data/token_reports/
