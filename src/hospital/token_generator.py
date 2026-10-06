@@ -1,45 +1,4 @@
 #!/usr/bin/env python3
-"""Generate protected linkage tokens locally at each hospital node.
-
-Pipeline position:
-
-    hospitalN.csv -> cleaning.py -> linkage_patients/hospitalN_linkage_patients.csv
-                  -> token_generator.py -> tokens/hospitalN_tokens.csv -> broker
-
-Input is the cleaned, one-row-per-patient linkage file written by cleaning.py.
-This script does NOT clean data. It checks that values are already in the
-cleaned format and stops if they are not, so cleaning rules live in one place.
-
-Output contains only site_id, local_patient_id and token columns. No names,
-dates of birth, phone numbers, postcodes or Medicare numbers leave this script.
-
-Token rules (Tasks document, "Example token rules"):
-
-    token_1 = first_name + last_name + date_of_birth + sex
-    token_2 = last_name + date_of_birth + postcode
-    token_3 = first_initial + last_name + date_of_birth
-    token_4 = phone + date_of_birth
-    token_5 = fake_medicare_id + date_of_birth
-
-Encoding methods:
-
-    hmac_sha256   (default) HMAC-SHA256 with a secret key shared by all
-                  hospitals and never given to the broker.
-    sha256        Plain SHA-256. No key. Reversible by dictionary attack.
-    sha512        Plain SHA-512. No key. Same weakness as sha256.
-    salted_sha256 SHA-256 of (shared salt + message). Included for the
-                  security comparison only.
-
-The unkeyed methods exist so the privacy and security work can compare them
-against HMAC using identical inputs. Use hmac_sha256 for real linkage runs.
-
-Usage:
-
-    python src/hospital/token_generator.py --generate-key secrets/pprl_token.key
-    python src/hospital/token_generator.py --key-file secrets/pprl_token.key
-    python src/hospital/token_generator.py --method sha256 --output-dir src/data/tokens_sha256
-"""
-
 from __future__ import annotations
 
 import argparse

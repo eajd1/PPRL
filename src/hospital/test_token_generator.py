@@ -1,10 +1,3 @@
-"""Tests for token_generator.py.
-
-Run from the repository root:
-
-    python -m unittest discover -s src/hospital -p "test_*.py" -v
-"""
-
 from __future__ import annotations
 
 import csv
@@ -227,12 +220,12 @@ class EndToEndTests(unittest.TestCase):
 
             shared = patient()
             write_linkage(inp / "hospital1_linkage_patients.csv",
-                          [dict(shared, hospital_id="1", local_patient_id="A1")])
+                        [dict(shared, hospital_id="1", local_patient_id="A1")])
             write_linkage(inp / "hospital2_linkage_patients.csv",
-                          [dict(shared, hospital_id="2", local_patient_id="B7"),
-                           patient(hospital_id="2", local_patient_id="B8", first_name="kellen",
-                                   last_name="ponce", date_of_birth="2002-09-27", phone="",
-                                   fake_medicare_id="2390228694")])
+                        [dict(shared, hospital_id="2", local_patient_id="B7"),
+                        patient(hospital_id="2", local_patient_id="B8", first_name="kellen",
+                                last_name="ponce", date_of_birth="2002-09-27", phone="",
+                                fake_medicare_id="2390228694")])
 
             args = ["--input-dir", str(inp), "--output-dir", str(out),
                     "--report-dir", str(rep), "--key-file", str(key_file)]
