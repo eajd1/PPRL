@@ -43,12 +43,26 @@ COMBINATIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "middle_last_first_email_sex",
         ("middle_name", "last_name", "first_name", "email", "sex"),
     ),
-    ("first_last_fake_medicare_id", ("first_name", "last_name", "fake_medicare_id")),
-    (
-        "first_initial_last_initial_fake_medicare_id",
-        ("first_initial", "last_initial", "fake_medicare_id"),
+    (   "first_last_family_medicare_id", 
+        ("first_name", "last_name", "family_medicare_id")
     ),
-    ("last_first_fake_medicare_id", ("last_name", "first_name", "fake_medicare_id")),
+    (
+        "first_initial_last_initial_family_medicare_id",
+        ("first_initial", "last_initial", "family_medicare_id"),
+    ),
+    (   "last_first_family_medicare_id", 
+        ("last_name", "first_name", "family_medicare_id")
+    ),
+    (   "first_last_personal_medicare_id", 
+        ("first_name", "last_name", "personal_medicare_id")
+    ),
+    (
+        "first_initial_last_initial_personal_medicare_id",
+        ("first_initial", "last_initial", "personal_medicare_id"),
+    ),
+    (   "last_first_personal_medicare_id", 
+        ("last_name", "first_name", "personal_medicare_id")
+    ),
     (
         "first_last_email_dob_dmy_sex_postcode_phone",
         ("first_name", "last_name", "email", "dob_dmy", "sex", "postcode", "phone"),
@@ -63,15 +77,7 @@ COMBINATIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     (
         "first_initial_last_initial_email_dob_dmy_sex_postcode_phone",
-        (
-            "first_initial",
-            "last_initial",
-            "email",
-            "dob_dmy",
-            "sex",
-            "postcode",
-            "phone",
-        ),
+        ("first_initial", "last_initial", "email", "dob_dmy", "sex", "postcode", "phone"),
     ),
     (
         "first_middle_email_sex_phone",
@@ -103,12 +109,20 @@ COMBINATIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     (
         "email_dob_dmy_sex_postcode_phone_fake_medicare_id",
-        ("email", "dob_dmy", "sex", "postcode", "phone", "fake_medicare_id"),
+        ("email", "dob_dmy", "sex", "postcode", "phone", "family_medicare_id"),
     ),
     (
         "email_dob_mdy_sex_postcode_phone_fake_medicare_id",
-        ("email", "dob_mdy", "sex", "postcode", "phone", "fake_medicare_id"),
+        ("email", "dob_mdy", "sex", "postcode", "phone", "family_medicare_id"),
     ),
+    (
+        "email_dob_dmy_sex_postcode_phone_fake_medicare_id",
+        ("email", "dob_dmy", "sex", "postcode", "phone", "personal_medicare_id"),
+    ),
+    (
+        "email_dob_mdy_sex_postcode_phone_fake_medicare_id",
+        ("email", "dob_mdy", "sex", "postcode", "phone", "personal_medicare_id"),
+    )
 )
 
 
@@ -138,6 +152,8 @@ def build_combination_strings(row: Mapping[str, str]) -> dict[str, str]:
             "middle_initial": values["middle_name"][:1],
             "dob_dmy": _format_date(values["date_of_birth"], "%d/%m/%Y"),
             "dob_mdy": _format_date(values["date_of_birth"], "%m/%d/%Y"),
+            "family_medicare_id": values["fake_medicare_id"][:10],
+            "personal_medicare_id": values["fake_medicare_id"][:11] if len(values["fake_medicare_id"]) == 11 else ""
         }
     )
     return {
@@ -153,8 +169,8 @@ def create_combination_csv(input_path: Path, output_path: Path) -> int:
 
     with input_path.open("r", newline="", encoding="utf-8-sig") as source:
         reader = csv.DictReader(source)
-        if reader.fieldnames is None:
-            raise ValueError(f"Input CSV has no header: {input_path}")
+        # if reader.fieldnames is None:
+        #     raise ValueError(f"Input CSV has no header: {input_path}")
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with output_path.open("w", newline="", encoding="utf-8") as destination:
