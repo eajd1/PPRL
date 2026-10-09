@@ -53,8 +53,8 @@ REQUIRED_COLUMNS = [
     "postcode",
     "phone",
     "fake_medicare_id",
-    "diagnosis_code",
-    "visit_date",
+    "middle_name",
+    "email",
     "hospital_id",
 ]
 
@@ -75,7 +75,9 @@ HEADERLESS_COLUMN_ORDER = [
 
 LINKAGE_COLUMNS = [
     "first_name",
+    "middle_name",
     "last_name",
+    "email",
     "date_of_birth",
     "sex",
     "postcode",
@@ -99,6 +101,7 @@ SEX_MAP = {
     "non binary": "O",
 
     "u": "U",
+    "?": "U",
     "unknown": "U",
     "unspecified": "U",
     "not specified": "U",
@@ -143,15 +146,29 @@ class CleaningError(ValueError):
 # Reading CSV files
 # ---------------------------------------------------------------------------
 
+# Other names a hospital file may use for the same column.
+COLUMN_ALIASES = {
+    "dob": "date_of_birth",
+    "birth_date": "date_of_birth",
+    "medicare": "fake_medicare_id",
+    "medicare_id": "fake_medicare_id",
+    "middle": "middle_name",
+    "patient_id": "local_patient_id",
+    "site_id": "hospital_id",
+    "gender": "sex",
+}
+
+
 def normalise_header(value: str) -> str:
     """Convert column headings to lowercase snake_case."""
 
-    return re.sub(
+    name = re.sub(
         r"[\s-]+",
         "_",
         value.strip().lower(),
     )
 
+    return COLUMN_ALIASES.get(name, name)
 
 def read_hospital_csv(
     path: Path,
@@ -327,7 +344,12 @@ def clean_date_of_birth(
                 raw,
                 date_format,
             ).date()
-
+            # Two-digit years: "29" is read as 2029. A birth date
+            # cannot be in the future, so move it back 100 years.
+            if parsed_date > datetime.now().date():
+                parsed_date = parsed_date.replace(
+                    year=parsed_date.year - 100
+                )
             return parsed_date.isoformat(), False
 
         except ValueError:
@@ -439,6 +461,19 @@ def clean_fake_medicare_id(
 
     return cleaned, False
 
+
+def clean_email(value: str) -> tuple[str, bool]:
+    """Lowercase an email address and check it looks like one."""
+
+    raw = value.strip().lower()
+
+    if not raw:
+        return "", False
+
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", raw):
+        return "", True
+
+    return raw, False
 
 def apply_cleaner(
     series: pd.Series,
@@ -874,8 +909,10 @@ def clean_dataframe(
     )
 
     cleaners: dict[str, Cleaner] = {
-        "first_name": clean_name,
+                "first_name": clean_name,
+        "middle_name": clean_name,
         "last_name": clean_name,
+        "email": clean_email,
         "date_of_birth": clean_date_of_birth,
         "sex": clean_sex,
         "postcode": clean_postcode,
@@ -936,10 +973,7 @@ def clean_dataframe(
             changed_counts
         ),
         "preserved_columns": [
-            "local_patient_id",
             "hospital_id",
-            "diagnosis_code",
-            "visit_date",
         ],
         **patient_quality_metrics(cleaned),
         "privacy_note": (
