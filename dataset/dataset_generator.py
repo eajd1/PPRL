@@ -189,6 +189,7 @@ date_formats = ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y", "%e/%m/%Y", "%e-
 # TODO randomise more (add mistakes)
 for i in range(0, len(hospital_records)):
     with open("hospital" + str(i + 1) + ".csv", "w") as file:
+        file.write("first_name, last_name, middle_name, email, dob, sex, postcode, phone, medicare, visit_date, admission_date, discharge_date, diagnosis, treatment, note, hospital_phone\n")
         date_format = random.choice(date_formats)
         for j in range(0, len(hospital_records[i])):
             record = hospital_records[i][j]
