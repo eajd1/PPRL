@@ -170,6 +170,19 @@ def normalise_header(value: str) -> str:
 
     return COLUMN_ALIASES.get(name, name)
 
+def hospital_id_from_filename(path: Path) -> str:
+    """Take the hospital number from the file name: hospital1.csv -> "1"."""
+
+    match = re.search(r"(\d+)", path.stem)
+
+    if not match:
+        raise CleaningError(
+            f"No hospital_id column and no number in file name {path.name}"
+        )
+
+    return match.group(1)
+
+
 def read_hospital_csv(
     path: Path,
 ) -> tuple[pd.DataFrame, bool]:
@@ -205,7 +218,8 @@ def read_hospital_csv(
         for value in first_row.iloc[0]
     ]
 
-    required = set(REQUIRED_COLUMNS)
+    # hospital_id may be missing; it is then taken from the file name.
+    required = set(REQUIRED_COLUMNS) - {"hospital_id"}
     recognised = required.intersection(first_values)
 
     # CSV contains a complete header.
@@ -222,7 +236,10 @@ def read_hospital_csv(
             for column in frame.columns
         ]
 
-        had_header = True
+            had_header = True
+
+        if "hospital_id" not in frame.columns:
+            frame["hospital_id"] = hospital_id_from_filename(path)
 
     # Some headings were found, but required headings are missing.
     elif recognised:
