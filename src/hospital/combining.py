@@ -10,8 +10,14 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_INPUT = PROJECT_ROOT / "dataset" / "cleaned" / "hospital1_cleaned.csv"
-DEFAULT_OUTPUT = PROJECT_ROOT / "dataset" / "cleaned" / "hospital1_combinations.csv"
+DEFAULT_INPUT_DIR = PROJECT_ROOT / "src" / "data" / "linkage_patients"
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "src" / "data" / "combinations"
+
+# Passed through unchanged so each row can be traced back to its patient.
+ID_COLUMNS = ("hospital_id", "local_patient_id")
+
+# Joins fields. Must not be "+", because phone numbers start with "+61".
+SEPARATOR = "|"
 
 REQUIRED_FIELDS = {
     "first_name",
@@ -140,10 +146,19 @@ def build_combination_strings(row: Mapping[str, str]) -> dict[str, str]:
             "dob_mdy": _format_date(values["date_of_birth"], "%m/%d/%Y"),
         }
     )
-    return {
-        column: "+".join(values[field] for field in fields)
-        for column, fields in COMBINATIONS
-    }
+        # Unknown sex is not evidence, so treat it as missing.
+    if values["sex"] == "U":
+        values["sex"] = ""
+
+    combinations = {}
+    for column, fields in COMBINATIONS:
+        parts = [values[field] for field in fields]
+        # If any field is missing, leave the combination blank.
+        if any(part == "" for part in parts):
+            combinations[column] = ""
+        else:
+            combinations[column] = SEPARATOR.join(parts)
+    return combinations
 
 
 def create_combination_csv(input_path: Path, output_path: Path) -> int:
@@ -160,11 +175,13 @@ def create_combination_csv(input_path: Path, output_path: Path) -> int:
         with output_path.open("w", newline="", encoding="utf-8") as destination:
             writer = csv.DictWriter(
                 destination,
-                fieldnames=[column for column, _ in COMBINATIONS],
+                    fieldnames=[*ID_COLUMNS, *(column for column, _ in COMBINATIONS)],
             )
+            writer.writeheader()
             row_count = 0
             for row in reader:
-                writer.writerow(build_combination_strings(row))
+                ids = {column: (row.get(column) or "").strip() for column in ID_COLUMNS}
+                writer.writerow({**ids, **build_combination_strings(row)})
                 row_count += 1
 
     return row_count
@@ -172,14 +189,22 @@ def create_combination_csv(input_path: Path, output_path: Path) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Generate 20 patient-identifier combinations from a hospital CSV."
+        description="Generate patient-identifier combinations for every hospital."
     )
-    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT_DIR)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     args = parser.parse_args(argv)
 
-    rows = create_combination_csv(args.input, args.output)
-    print(f"Wrote {len(COMBINATIONS)} combinations for {rows} rows to {args.output}")
+    inputs = sorted(args.input_dir.glob("hospital*_linkage_patients.csv"))
+    if not inputs:
+        print(f"No linkage files found in {args.input_dir}. Run cleaning.py first.")
+        return 1
+
+    for input_path in inputs:
+        name = input_path.stem.replace("_linkage_patients", "")
+        output_path = args.output_dir / f"{name}_combinations.csv"
+        rows = create_combination_csv(input_path, output_path)
+        print(f"Wrote {len(COMBINATIONS)} combinations for {rows} rows to {output_path}")
     return 0
 
 
