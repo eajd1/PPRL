@@ -85,8 +85,12 @@ def hospital_gender_format(gender, rand):
         i = rand % 5
         return ["", "?", "unspecified", "Unspecified", "Unknown"][i]
 
+def hospital_patient_id(patient, rand):
+    return str((rand + int(patient.patient_id)) % num_patients)
+
 def get_record_entry(record, rand, date):
-    return ((random.choice(record.patient.first_name) if random.random() > deletion_rate else "") + "," +
+    return ((hospital_patient_id(record.patient, rand)) + "," +
+            (random.choice(record.patient.first_name) if random.random() > deletion_rate else "") + "," +
             (random.choice(record.patient.last_name) if random.random() > deletion_rate else "") + "," +
             (random.choice(record.patient.middle_name) if random.random() > deletion_rate else "") + "," +
             (record.patient.email if random.random() > deletion_rate else "") + "," +
@@ -154,7 +158,7 @@ hospital_rng = []
 for h in range(0, num_hospitals):
     hospital_rng.append(random.randint(400000000, 499999999)) # Also acts as hospital phone
 
-# Make multiple records for each patient
+# Make multiple records for each hospital
 hospital_records = []
 for h in range(0, num_hospitals):
     records = []
@@ -189,7 +193,7 @@ date_formats = ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y", "%e/%m/%Y", "%e-
 # TODO randomise more (add mistakes)
 for i in range(0, len(hospital_records)):
     with open("hospital" + str(i + 1) + ".csv", "w") as file:
-        file.write("first_name, last_name, middle_name, email, dob, sex, postcode, phone, medicare, visit_date, admission_date, discharge_date, diagnosis, treatment, note, hospital_phone\n")
+        file.write("patient_id, first_name, last_name, middle_name, email, dob, sex, postcode, phone, medicare, visit_date, admission_date, discharge_date, diagnosis, treatment, note, hospital_phone\n")
         date_format = random.choice(date_formats)
         for j in range(0, len(hospital_records[i])):
             record = hospital_records[i][j]
