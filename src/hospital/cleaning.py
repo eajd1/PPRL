@@ -235,8 +235,7 @@ def read_hospital_csv(
             normalise_header(str(column))
             for column in frame.columns
         ]
-
-            had_header = True
+        had_header = True
 
         if "hospital_id" not in frame.columns:
             frame["hospital_id"] = hospital_id_from_filename(path)
@@ -1270,9 +1269,9 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--input-dir",
+                "--input-dir",
         type=Path,
-        default=DATA_DIR,
+        default=SRC_DIR.parent / "dataset",
         help=(
             "Directory containing hospital CSVs"
         ),
