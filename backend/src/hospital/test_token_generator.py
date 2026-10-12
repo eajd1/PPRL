@@ -137,7 +137,7 @@ class EndToEndTests(unittest.TestCase):
 
             h1 = list(csv.DictReader((out / "hospital1_tokens.csv").open()))
             h2 = list(csv.DictReader((out / "hospital2_tokens.csv").open()))
-            self.assertEqual(list(h1[0]), ["site_id", "local_patient_id", *COMBOS])
+            self.assertEqual(list(h1[0]), ["site_id", "local_patient_id", "token_version", "key_id", "method", *COMBOS])
             self.assertEqual(h1[0]["local_patient_id"], "0")          # copied, not hashed
             for name in COMBOS:
                 self.assertEqual(h1[0][name], h2[0][name])            # same patient matches

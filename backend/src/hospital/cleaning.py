@@ -59,19 +59,19 @@ REQUIRED_COLUMNS = [
 ]
 
 # Used when a CSV does not contain a header row.
-HEADERLESS_COLUMN_ORDER = [
-    "first_name",
-    "last_name",
-    "date_of_birth",
-    "local_patient_id",
-    "sex",
-    "postcode",
-    "phone",
-    "fake_medicare_id",
-    "diagnosis_code",
-    "visit_date",
-    "hospital_id",
-]
+# HEADERLESS_COLUMN_ORDER = [
+#     "first_name",
+#     "last_name",
+#     "date_of_birth",
+#     "local_patient_id",
+#     "sex",
+#     "postcode",
+#     "phone",
+#     "fake_medicare_id",
+#     "diagnosis_code",
+#     "visit_date",
+#     "hospital_id",
+# ]
 
 LINKAGE_COLUMNS = [
     "first_name",
@@ -186,7 +186,7 @@ def hospital_id_from_filename(path: Path) -> str:
 def read_hospital_csv(
     path: Path,
 ) -> tuple[pd.DataFrame, bool]:
-    """Read a hospital CSV with or without a header."""
+    """Read a hospital CSV with headers; headerless support is disabled."""
 
     try:
         first_row = pd.read_csv(
@@ -252,29 +252,33 @@ def read_hospital_csv(
             + ", ".join(missing)
         )
 
-    # Treat the file as headerless.
     else:
-        expected_count = len(
-            HEADERLESS_COLUMN_ORDER
-        )
+        raise CleaningError("CSV headers are required; missing required columns: "
+                            + ", ".join(sorted(required.difference(first_values))))
 
-        if first_row.shape[1] != expected_count:
-            raise CleaningError(
-                "Headerless CSV must contain exactly "
-                f"{expected_count} columns; "
-                f"found {first_row.shape[1]}"
-            )
-
-        frame = pd.read_csv(
-            path,
-            header=None,
-            names=HEADERLESS_COLUMN_ORDER,
-            dtype=str,
-            keep_default_na=False,
-            encoding="utf-8-sig",
-        )
-
-        had_header = False
+#     # Treat the file as headerless.
+#     else:
+#         expected_count = len(
+#             HEADERLESS_COLUMN_ORDER
+#         )
+# 
+#         if first_row.shape[1] != expected_count:
+#             raise CleaningError(
+#                 "Headerless CSV must contain exactly "
+#                 f"{expected_count} columns; "
+#                 f"found {first_row.shape[1]}"
+#             )
+# 
+#         frame = pd.read_csv(
+#             path,
+#             header=None,
+#             names=HEADERLESS_COLUMN_ORDER,
+#             dtype=str,
+#             keep_default_na=False,
+#             encoding="utf-8-sig",
+#         )
+# 
+#         had_header = False
 
     duplicate_headers = frame.columns[
         frame.columns.duplicated()
@@ -459,22 +463,13 @@ def clean_phone(value: str) -> tuple[str, bool]:
 def clean_fake_medicare_id(
     value: str,
 ) -> tuple[str, bool]:
-    """Remove spaces and punctuation from fake Medicare IDs."""
-
+    """Clean a Medicare card number and check for exactly 10 ASCII digits."""
     raw = value.strip()
-
     if not raw:
         return "", False
-
-    cleaned = "".join(
-        character
-        for character in raw
-        if character.isalnum()
-    )
-
-    if not cleaned:
+    cleaned = re.sub(r"[\s/-]", "", raw)
+    if len(cleaned) != 10 or not cleaned.isascii() or not cleaned.isdigit():
         return "", True
-
     return cleaned, False
 
 
@@ -595,13 +590,9 @@ def remove_rows_without_ids(
                 "blank_hospital_id"
             )
 
-        # For a headered CSV, DataFrame index 0 is CSV row 2.
-        # For a headerless CSV, index 0 is CSV row 1.
-        csv_row_number = (
-            int(index) + 2
-            if had_header
-            else int(index) + 1
-        )
+        # Headerless row-number handling is disabled for now.
+        # csv_row_number = int(index) + 2 if had_header else int(index) + 1
+        csv_row_number = int(index) + 2
 
         rejected_row_details.append(
             {

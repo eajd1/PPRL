@@ -226,3 +226,11 @@ secrets/
 /src/data/tokens/
 /src/data/token_reports/
 /src/data/combinations/
+# Shared hospital linkage secrets
+.env.*
+!.env.example
+
+# Web application outputs
+/backend/runtime/
+/backend/src/data/
+*.zip

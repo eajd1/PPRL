@@ -13,7 +13,7 @@ Input  (one file per hospital, made by combining.py):
     hospital_id, local_patient_id, <combination 1>, <combination 2>, ...
 
 Output (sent to the broker):
-    site_id, local_patient_id, <token 1>, <token 2>, ...
+    site_id, local_patient_id, token_version, key_id, method, <token 1>, <token 2>, ...
 
 Each token column has the same name as the combination it came from.
 A blank combination (a field was missing) stays blank, so the broker skips it.
@@ -29,14 +29,11 @@ Methods:
 The unkeyed methods are for the security comparison only.
 
 Usage:
-    python src/hospital/token_generator.py --generate-key     (once, ever)
-    python src/hospital/token_generator.py                    (every run)
-    python src/hospital/token_generator.py --method sha256 --output-dir src/data/tokens_sha256
+    python src/hospital/pipeline.py             (complete pipeline)
+    python src/hospital/token_generator.py      (tokenisation only)
 
-Run button: pressing Run in VS Code (or running with no options) first runs
-cleaning.py and combining.py, then hashes, so the whole hospital side runs in
-one click. Set RUN_EARLIER_STEPS = False to only hash. Running with any option
-(such as --method) only hashes.
+Shared key, key ID and version are read from the project-root .env.
+The secret key is never included in token CSVs or reports.
 """
 
 from __future__ import annotations
@@ -49,8 +46,8 @@ import json
 import os
 import re
 import secrets
-import subprocess
 import sys
+from dotenv import load_dotenv
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -60,13 +57,9 @@ DATA_DIR = SRC_DIR / "data"
 DEFAULT_KEY_FILE = SRC_DIR.parent / "secrets" / "pprl_token.key"
 KEY_ENV_VAR = "PPRL_TOKEN_KEY"
 
-# When True, pressing Run (no options) also runs cleaning.py and combining.py
-# first, so one click does the whole hospital side.
-RUN_EARLIER_STEPS = True
-EARLIER_STEPS = (
-    ("cleaning", [SRC_DIR / "hospital" / "cleaning.py", "--overwrite"]),
-    ("combining", [SRC_DIR / "hospital" / "combining.py"]),
-)
+# Shared linkage configuration is loaded locally; process environment wins.
+DEFAULT_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+load_dotenv(DEFAULT_ENV_FILE, override=False)
 
 ID_COLUMNS = ("hospital_id", "local_patient_id")
 METHODS = ("hmac_sha256", "sha256", "sha512", "salted_sha256")
@@ -75,7 +68,8 @@ MIN_KEY_BYTES = 32
 
 # Bump this if the hashing input format changes, so old and new tokens
 # can never match by accident.
-TOKEN_SCHEME_VERSION = "v2"
+TOKEN_SCHEME_VERSION = os.environ.get("PPRL_TOKEN_VERSION", "v2")
+TOKEN_KEY_ID = os.environ.get("PPRL_KEY_ID", "")
 
 # Separates the version, combination name and value before hashing.
 # It cannot appear in cleaned data.
@@ -220,7 +214,13 @@ def tokenise_file(
     report_dir: Path,
     method: str,
     key: bytes | None,
+    key_id: str | None = None,
 ) -> dict[str, object]:
+    if not TOKEN_SCHEME_VERSION.strip() or FIELD_SEPARATOR in TOKEN_SCHEME_VERSION:
+        raise TokenisationError("PPRL_TOKEN_VERSION must be nonblank and contain no field separator")
+    key_id = (key_id if key_id is not None else TOKEN_KEY_ID) if method in KEYED_METHODS else "unkeyed"
+    if not key_id or not re.fullmatch(r"[A-Za-z0-9_.-]+", key_id):
+        raise TokenisationError("Set PPRL_KEY_ID to a nonblank key label in .env")
     combination_columns, rows = read_combinations(input_path)
     site_id = rows[0]["hospital_id"]
     stem = input_path.stem.removesuffix("_combinations")
@@ -233,12 +233,12 @@ def tokenise_file(
     produced = {name: 0 for name in combination_columns}
     with token_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle, lineterminator="\n")
-        writer.writerow(["site_id", "local_patient_id", *combination_columns])
+        writer.writerow(["site_id", "local_patient_id", "token_version", "key_id", "method", *combination_columns])
         for row in rows:
             tokens = [make_token(name, row[name], method, key) for name in combination_columns]
             for name, token in zip(combination_columns, tokens):
                 produced[name] += int(bool(token))
-            writer.writerow([site_id, row["local_patient_id"], *tokens])
+            writer.writerow([site_id, row["local_patient_id"], TOKEN_SCHEME_VERSION, key_id, method, *tokens])
 
     report = {
         "source_file": input_path.name,
@@ -246,6 +246,7 @@ def tokenise_file(
         "site_id": site_id,
         "method": method,
         "token_scheme_version": TOKEN_SCHEME_VERSION,
+        "key_id": key_id,
         "patients": len(rows),
         "tokens_produced": produced,
         "patients_with_no_tokens": sum(
@@ -311,25 +312,6 @@ def main(argv: list[str] | None = None) -> int:
     return 1 if failures else 0
 
 
-def run_earlier_steps() -> int:
-    """Run cleaning.py then combining.py; stop at the first failure."""
-
-    for name, (script, *options) in EARLIER_STEPS:
-        print(f"\n=== {name} ===")
-        if not script.is_file():
-            print(f"Missing {script}", file=sys.stderr)
-            return 1
-        result = subprocess.run([sys.executable, str(script), *options], cwd=SRC_DIR.parent)
-        if result.returncode != 0:
-            print(f"Stopped: {name} failed (see messages above).", file=sys.stderr)
-            return result.returncode
-    print("\n=== tokenisation ===")
-    return 0
-
 
 if __name__ == "__main__":
-    if RUN_EARLIER_STEPS and len(sys.argv) == 1:
-        code = run_earlier_steps()
-        if code != 0:
-            raise SystemExit(code)
     raise SystemExit(main())
