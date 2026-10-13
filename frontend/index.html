@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hospital PPRL · Token workspace</title>
+  <meta name="description" content="Prepare hospital CSV files, generate protected tokens and review your results locally.">
+  <link rel="stylesheet" href="/styles.css"><script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Hospital PPRL home"><span class="brand-mark">P</span><span>Hospital PPRL<small>LOCAL WORKSPACE</small></span></a>
+    <div class="nav-label">WORKSPACE</div><div class="nav-active"><span>▧</span> Token preparation</div>
+    <div class="side-flow"><div class="nav-label">YOUR WORKFLOW</div><p><b>01</b> Upload hospital data</p><p><b>02</b> Clean & consolidate</p><p><b>03</b> Generate protected tokens</p><p><b>04</b> Review & download</p></div>
+    <div class="side-footer"><span class="local-dot"></span> Hospital-local processing<small>CSV → clean → combine → tokenise</small></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><span>Hospital node <span class="divider">/</span> Token workspace</span><span class="service-state" id="serviceState">Connecting…</span></header>
+    <main>
+      <div class="page-heading"><div class="eyebrow">DATA PREPARATION</div><h1>From hospital data<br>to protected tokens.</h1><p>Upload your CSV files. Review the outcome for each file,<br class="desktop-break"> then explore and download your tokenised patient records.</p></div>
+      <div class="privacy-note"><span class="shield" aria-hidden="true">◇</span><div><strong>Your identifiers stay within this hospital workspace.</strong><p>Cleaning, combinations and token generation run on the local backend. This app does not send files to a broker.</p></div><span class="note-label">LOCAL PROCESSING</span></div>
+      <div class="upload-layout">
+        <section class="panel upload-panel" aria-labelledby="uploadHeading">
+          <div class="panel-title"><h2 id="uploadHeading">Upload hospital files</h2><span class="subtle-label">STEP 01</span></div>
+          <input id="fileInput" type="file" accept=".csv,text/csv" multiple class="sr-only">
+          <div id="dropzone" class="dropzone"><div class="upload-icon" aria-hidden="true">↑</div><h3>Drop your CSV files here</h3><p>One hospital file or a batch of files</p><button id="browseButton" type="button" class="button secondary">Browse files</button><span class="file-limit">CSV with headers · 10 MB per file · Up to 20 files</span></div>
+          <div class="selection-heading" id="selectionHeading" hidden><span id="selectionCount"></span><button id="clearButton" type="button" class="text-button">Clear selection</button></div>
+          <ul id="selectedFiles" class="file-list" aria-label="Selected files"></ul>
+          <p id="selectionError" class="error-text" role="alert" hidden></p>
+          <div class="upload-footer"><span id="uploadHint">Choose files to start preparing tokens.</span><button id="processButton" type="button" class="button primary" disabled>Generate tokens <span aria-hidden="true">→</span></button></div>
+          <div id="progressBlock" class="progress-block" hidden><div class="progress-copy"><span id="progressLabel">Uploading files…</span><span id="progressValue"></span></div><progress id="uploadProgress" max="100" value="0" aria-label="Upload progress"></progress></div>
+        </section>
+        <aside class="panel guide-panel"><span class="eyebrow">A QUICK GUIDE</span><h2>Ready for a clean start.</h2><p>The pipeline standardises identifiers, consolidates repeat patients, creates your existing combinations and generates HMAC tokens.</p><div class="guide-item"><span>01</span><div><strong>A header row in every CSV</strong><p>The column names identify each field.</p></div></div><div class="guide-item"><span>02</span><div><strong>One hospital per file</strong><p>Include <code>hospital_id</code>, or name your file <code>hospital1.csv</code>, <code>hospital2.csv</code>, etc.</p></div></div><div class="guide-item"><span>03</span><div><strong>Shared token configuration</strong><p>The backend uses its configured key and version. The secret key stays out of results.</p></div></div><details><summary>View recognised column names</summary><p class="columns-guide">local_patient_id, first_name, middle_name, last_name, email, date_of_birth, sex, postcode, phone, fake_medicare_id, hospital_id</p><p>Existing aliases such as patient_id, dob and medicare are also supported. Extra visit columns are retained locally.</p></details><a class="sample-link" href="/example.csv" download="hospital1.csv">Download an example CSV <span aria-hidden="true">↗</span></a></aside>
+      </div>
+      <section id="resultsSection" class="results-section" hidden aria-labelledby="resultsHeading">
+        <div class="results-top"><div><div class="eyebrow">PROCESSING RESULTS</div><h2 id="resultsHeading">Your token files</h2><p id="resultSummary" aria-live="polite"></p></div><a id="downloadAll" class="button secondary" hidden>Download all tokens ↓</a></div>
+        <div class="result-stats" id="resultStats"></div><div id="resultsList" class="results-list"></div>
+      </section>
+      <footer class="page-footer"><span>Hospital PPRL · Preprocessing & tokenisation</span><span>Multi-hospital uploads simulate separate nodes in this prototype.</span></footer>
+    </main>
+  </div>
+  <dialog id="previewDialog" aria-labelledby="previewTitle"><div class="dialog-header"><div><span class="eyebrow">TOKEN FILE PREVIEW</span><h2 id="previewTitle">Tokenised records</h2><p id="previewMeta"></p></div><button id="closePreview" type="button" class="icon-button" aria-label="Close token preview">×</button></div><div class="preview-note">Blank tokens indicate incomplete combinations. The full token values are available here and in the CSV download.</div><div id="previewError" class="error-text" role="alert" hidden></div><div id="previewTable" class="table-scroll" aria-live="polite"></div><div class="dialog-footer"><span id="previewPage"></span><div class="pagination"><button id="previousPage" type="button" class="button secondary">Previous</button><button id="nextPage" type="button" class="button secondary">Next</button><a id="previewDownload" class="button primary">Download CSV ↓</a></div></div></dialog>
+</body>
+</html>
