@@ -227,8 +227,3 @@ secrets/
 /src/data/tokens/
 /src/data/token_reports/
 /src/data/combinations/
-
-.dockerignore
-/compose.yml
-Dockerfile
-/requirements.txt
