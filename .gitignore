@@ -223,6 +223,12 @@ __marimo__/
 /src/data/cleaning_reports/
 
 secrets/
+/src/data/
 /src/data/tokens/
 /src/data/token_reports/
 /src/data/combinations/
+
+.dockerignore
+/compose.yml
+Dockerfile
+/requirements.txt
