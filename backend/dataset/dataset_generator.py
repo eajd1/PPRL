@@ -14,8 +14,9 @@ class Patient:
     medicare = ""
     email = ""
     middle_name = ""
+    private_healthcare = ""
 
-    def __init__(self, patient_id, first_name, last_name, dob, sex, postcode, phone, medicare, email, middle_name):
+    def __init__(self, patient_id, first_name, last_name, dob, sex, postcode, phone, medicare, email, middle_name, private_healthcare):
         self.patient_id = str(patient_id)
         self.first_name = first_name
         self.last_name = last_name
@@ -26,6 +27,7 @@ class Patient:
         self.medicare = str(medicare)
         self.email = email
         self.middle_name = middle_name
+        self.private_healthcare = str(private_healthcare)
 
 class Record:
     patient = None
@@ -99,6 +101,7 @@ def get_record_entry(record, rand, date):
             (record.patient.postcode if random.random() > deletion_rate else "") + "," +
             (("0" + record.patient.phone) if random.random() > deletion_rate else "") + "," +
             (record.patient.medicare if random.random() > deletion_rate else "") + "," +
+            (record.patient.private_healthcare if random.random() > deletion_rate else "") + "," +
             (format_date(record.visit_date, date) if random.random() > deletion_rate else "") + "," +
             (format_date(record.admission_date, date) if random.random() > deletion_rate else "") + "," +
             (format_date(record.discharge_date, date) if random.random() > deletion_rate else "") + "," +
@@ -151,8 +154,10 @@ for i in range(0, num_patients):
     medicare = random.randint(1000000000, 9999999999)
     email = random_string(10) + "@" + random_string(6) + ".com"
     middle_name = random.choice(first_names) if random.random() > 0.5 else random.choice(last_names)
+    private_healthcare = random.randint(1000000000, 9999999999)
     patients.append(Patient(i, first_name, last_name, dob, sex,
-                            postcode, phone, medicare, email, middle_name))
+                            postcode, phone, medicare, email,
+                            middle_name, private_healthcare))
 
 hospital_rng = []
 for h in range(0, num_hospitals):
@@ -193,7 +198,7 @@ date_formats = ["%d/%m/%y", "%d/%m/%Y", "%d-%m-%y", "%d-%m-%Y", "%e/%m/%Y", "%e-
 # TODO randomise more (add mistakes)
 for i in range(0, len(hospital_records)):
     with open("hospital" + str(i + 1) + ".csv", "w") as file:
-        file.write("patient_id, first_name, last_name, middle_name, email, dob, sex, postcode, phone, medicare, visit_date, admission_date, discharge_date, diagnosis, treatment, note, hospital_phone\n")
+        file.write("patient_id, first_name, last_name, middle_name, email, dob, sex, postcode, phone, medicare, private_healthcare, visit_date, admission_date, discharge_date, diagnosis, treatment, note, hospital_phone\n")
         date_format = random.choice(date_formats)
         for j in range(0, len(hospital_records[i])):
             record = hospital_records[i][j]
