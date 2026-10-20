@@ -1,0 +1,5 @@
+body { font: 16px/1.5 system-ui, sans-serif; background: #f5f7fa; color: #172936; margin: 0; }
+main { max-width: 760px; margin: 3rem auto; padding: 1.5rem; }
+ul { list-style: none; padding: 0; }
+li { background: white; border: 1px solid #d5dfe5; border-radius: 8px; margin: 1rem 0; padding: 1.2rem; overflow-wrap: anywhere; }
+p { margin: .4rem 0; } small { color: #526674; }

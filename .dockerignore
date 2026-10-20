@@ -6,3 +6,13 @@
 backend/runtime
 backend/src/data
 *.zip
+certs
+secrets
+**/*.key
+**/*.p12
+**/*.pfx
+**/operator.htpasswd
+**/allowlist.json
+.test-credentials
+broker/data
+.venv

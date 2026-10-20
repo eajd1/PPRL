@@ -1,0 +1,63 @@
+# Used together with compose.broker.yaml under an isolated Compose project.
+x-hospital: &hospital
+  image: pprl-security-test-hospital:local
+  environment: &hospital-environment
+    PPRL_TOKEN_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    PPRL_KEY_ID: integration-only
+    PPRL_TOKEN_VERSION: v2
+    PPRL_RUNTIME_DIR: /app/runtime
+    BROKER_URL: https://broker-proxy:8443
+    BROKER_CA_FILE: /run/hospital-tls/ca.crt
+    HOSPITAL_CERT_FILE: /run/hospital-tls/client.crt
+    HOSPITAL_KEY_FILE: /run/hospital-tls/client.key
+services:
+  broker-api:
+    volumes:
+      - ${BROKER_TEST_DATA_DIR:?Run scripts/test_secure_broker.py}:/data
+  broker-proxy:
+    ports: !override []
+  hospital1-api:
+    <<: *hospital
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      <<: *hospital-environment
+      HOSPITAL_ID: hospital1
+    volumes:
+      - ./.test-credentials/hospital1:/run/hospital-tls:ro
+  hospital2-api:
+    <<: *hospital
+    environment:
+      <<: *hospital-environment
+      HOSPITAL_ID: hospital2
+    volumes:
+      - ./.test-credentials/hospital2:/run/hospital-tls:ro
+  hospital3-api:
+    <<: *hospital
+    environment:
+      <<: *hospital-environment
+      HOSPITAL_ID: hospital3
+    volumes:
+      - ./.test-credentials/hospital3:/run/hospital-tls:ro
+  test-runner:
+    build:
+      context: .
+      dockerfile: tests/Dockerfile
+    environment:
+      TEST_BROKER_URL: https://broker-proxy:8443
+      TEST_OPERATOR_URL: https://broker-proxy:9443
+      TEST_CERT_DIR: /certs
+      TEST_OPERATOR_PASSWORD: integration-test-password
+      PPRL_TOKEN_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      PPRL_KEY_ID: integration-only
+      PPRL_TOKEN_VERSION: v2
+    volumes:
+      - .:/workspace:ro
+      - ./.test-credentials:/certs:ro
+      - ${BROKER_TEST_DATA_DIR:?Run scripts/test_secure_broker.py}:/broker-data:ro
+    depends_on:
+      - broker-proxy
+      - hospital1-api
+      - hospital2-api
+      - hospital3-api

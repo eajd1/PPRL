@@ -135,14 +135,17 @@ class EndToEndTests(unittest.TestCase):
                                         "--report-dir", str(rep), "--key-file", str(key_file)])
             self.assertEqual(code, 0, err)
 
-            h1 = list(csv.DictReader((out / "hospital1_tokens.csv").open()))
-            h2 = list(csv.DictReader((out / "hospital2_tokens.csv").open()))
-            self.assertEqual(list(h1[0]), ["site_id", "local_patient_id", "token_version", "key_id", "method", *COMBOS])
+            with (out / "hospital1_tokens.csv").open() as handle:
+                h1 = list(csv.DictReader(handle))
+            with (out / "hospital2_tokens.csv").open() as handle:
+                h2 = list(csv.DictReader(handle))
+            token_columns = [f"token{i}" for i in range(1, len(COMBOS) + 1)]
+            self.assertEqual(list(h1[0]), ["site_id", "local_patient_id", "token_version", "key_id", "method", *token_columns])
             self.assertEqual(h1[0]["local_patient_id"], "0")          # copied, not hashed
-            for name in COMBOS:
+            for name in token_columns:
                 self.assertEqual(h1[0][name], h2[0][name])            # same patient matches
                 self.assertNotEqual(h1[0][name], h2[1][name])         # different patient doesn't
-            self.assertEqual(h2[1][COMBOS[1]], "")                    # blank stays blank
+            self.assertEqual(h2[1][token_columns[1]], "")             # blank stays blank
 
             text = (out / "hospital2_tokens.csv").read_text()
             for raw in ("lucy", "yoder", "9842414729", "+61457216934", "ponce"):

@@ -1,0 +1,11 @@
+# Apply on each hospital laptop, in addition to compose.yaml.
+services:
+  backend:
+    environment:
+      BROKER_URL: ${BROKER_URL:?Set BROKER_URL to the broker LAN HTTPS origin}
+      HOSPITAL_ID: ${HOSPITAL_ID:?Set HOSPITAL_ID to hospital1, hospital2 or hospital3}
+      BROKER_CA_FILE: /run/hospital-tls/ca.crt
+      HOSPITAL_CERT_FILE: /run/hospital-tls/client.crt
+      HOSPITAL_KEY_FILE: /run/hospital-tls/client.key
+    volumes:
+      - ${HOSPITAL_TLS_DIR:?Set HOSPITAL_TLS_DIR to this hospital certificate bundle}:/run/hospital-tls:ro

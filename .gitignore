@@ -58,8 +58,6 @@ cover/
 # Django stuff:
 *.log
 local_settings.py
-db.sqlite3
-db.sqlite3-journal
 
 # Flask stuff:
 instance/
@@ -235,3 +233,13 @@ secrets/
 /backend/runtime/
 /backend/src/data/
 *.zip
+
+# LAN TLS credentials, operator password hashes and broker data
+broker/data/
+certs/
+*.key
+*.p12
+*.pfx
+operator.htpasswd
+allowlist.json
+.test-credentials/

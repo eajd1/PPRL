@@ -1,6 +1,8 @@
 # Hospital PPRL upload application
 
-A hospital-local application for uploading CSV files, cleaning and consolidating patients, generating the existing 20 identifier combinations, and creating HMAC-SHA-256 tokens. The frontend shows the outcome for each file and provides token previews and downloads.
+A hospital-local application for uploading CSV files, cleaning and consolidating patients, generating the existing 20 identifier combinations, and creating HMAC-SHA-256 tokens. The frontend shows the outcome for each file and provides token previews and downloads. Optional broker delivery sends individual hospital ID / local patient ID / protected token records over TLS 1.3 with mutual certificate authentication.
+
+**Four-laptop deployment:** see [the secure broker deployment guide](broker/README.md) for certificate generation, LAN configuration, hospital setup, operator login and end-to-end TLS tests. The broker runs independently using `compose.broker.yaml`; hospitals enable delivery using `compose.hospital.yaml`.
 
 ## Start with one command
 
@@ -12,16 +14,16 @@ docker compose up --build
 
 Open **http://localhost:8080**. No separate Python, Node or Nginx installation is needed on your computer. The archive includes `.env` with the shared prototype configuration, so no setup step is required before this demonstration.
 
-Stop with Ctrl+C, or run `docker compose down` from another terminal. Jobs are stored in a Docker named volume and survive container restarts and `docker compose down`. The project binds to localhost for this unauthenticated local prototype. Docker needs internet access for the first image build and dependency downloads.
+Stop with Ctrl+C, or run `docker compose down` from another terminal. Jobs and intermediate CSVs are stored in the project folder `backend/runtime/` through a Docker bind mount and survive container restarts and `docker compose down`. The project binds to localhost for this unauthenticated local prototype. Docker needs internet access for the first image build and dependency downloads.
 
 ## Use the application
 
 1. Select **Browse files** or drag one or more CSVs onto the upload area.
 2. Review the selected files; remove individual files or clear the selection as needed.
-3. Select **Generate tokens**. Upload progress and processing status appear automatically.
-4. Review each file's **Success** or **Failed** status. One failed file does not prevent other files from completing.
-5. Select **View tokens** to inspect full token values in a paginated table. Scroll horizontally to see all 20 token columns.
-6. Select **Download CSV** for an individual file, or **Download all tokens** for a ZIP of successful token outputs. Token reports and cleaning reports are also available.
+3. Select **Send to broker**. Upload progress and background preparation status appear automatically. Cleaning and tokenisation run locally; configured deployments then send individual hospital ID / local patient ID / protected token records over mTLS.
+4. Review each file's **Received by broker**, **Delivery failed**, or processing failure status. Without broker configuration, files show **Ready for broker**. One failed file does not prevent other files from completing.
+5. Select **Inspect prepared records** to inspect full token values in a paginated table. Scroll horizontally to see all 20 token columns.
+6. Select **Download CSV** for an individual file, or **Download prepared files** for a ZIP of successful token outputs. Token reports and cleaning reports are also available.
 
 The latest job is restored after refreshing the same browser tab. Job IDs are kept in session storage; no secret keys or patient data are stored there. Browser downloads save files to your normal download location.
 
@@ -53,7 +55,7 @@ cleaning.process_hospital()
 
 The modules are separate Python files connected through normal Python imports and local generated CSVs. There are no subprocess calls in the pipeline. Patient consolidation is still inside cleaning.py. Detailed consolidation report output remains commented, as requested. combining.py and all 20 combination rules are unchanged.
 
-Each job has an unpredictable UUID. Every uploaded file gets its own folder even when multiple files have the same name. Uploaded raw CSVs, cleaned data, patient linkage data and identifier combinations remain on the local backend. There is no broker communication in this application.
+Each job has an unpredictable UUID. Every uploaded file gets its own folder even when multiple files have the same name. Uploaded raw CSVs, cleaned data, patient linkage data and identifier combinations remain on the local backend. With broker delivery enabled, each nonblank token is sent in its own mTLS request as `[hospitalID, patientID, token]`, using the existing `local_patient_id`. The original filename and retry information are separate metadata. Names and other raw identifying fields are excluded. The broker acknowledges the submission; failed deliveries can be retried without regenerating tokens.
 
 The API accepts a job quickly, then processes it in a background thread. At most two jobs process concurrently; remaining jobs wait. The browser polls the saved status. If the backend restarts during processing, unfinished files are marked as interrupted and can be uploaded again. Previously completed outputs remain accessible.
 
@@ -79,7 +81,7 @@ site_id, local_patient_id, token_version, key_id, method, <20 token columns>
 
 The secret key is never a CSV column. `key_id` is only its non-secret label. Existing blank-combination handling remains unchanged.
 
-This local demonstration does not implement authentication, hospital-based authorisation, HTTPS, broker matching or broker submission. Cleaning reports can contain local patient IDs and should be handled as sensitive local outputs. Keep this prototype on a trusted local machine; access controls are a separate deployment task.
+The hospital UI/API remains an unauthenticated, loopback-only local prototype. The separate broker uses TLS 1.3, mTLS certificate allowlisting for hospital submissions, and HTTPS operator authentication for the dashboard. No broker matching is implemented. Cleaning reports can contain local patient IDs and remain sensitive local outputs. See [broker security and deployment instructions](broker/README.md).
 
 ## Project structure
 
@@ -115,7 +117,7 @@ PPRL_Hospital_App/
 └── README.md
 ```
 
-Runtime output structure inside the backend:
+Runtime output structure inside the backend (bind-mounted to `backend/runtime/` in the project):
 
 ```text
 /app/runtime/<job-id>/
@@ -132,7 +134,9 @@ Runtime output structure inside the backend:
         └── token_reports/
 ```
 
-Outputs are retained until the volume is deliberately removed. `docker compose down --volumes` permanently removes the application's saved jobs and generated files.
+Outputs remain in `backend/runtime/` until those host files are deliberately deleted. Broker receipts and token CSVs are stored in `broker/data/received/<submission-id>/`. No database is used. The flow is raw CSV -> cleaned CSV -> combinations CSV -> token CSV -> individual token requests with hospital/patient IDs -> broker token CSV storage; further broker processing is TODO.
+
+If upgrading from the earlier named-volume setup, existing volume data is not automatically migrated or deleted. Before recreating a running hospital container, copy its old files with `docker compose cp backend:/app/runtime/. ./backend/runtime`. On Linux hosts, give UID 10001 write access to the bind-mounted runtime folder; Windows Docker Desktop uses Windows file permissions.
 
 ## API
 
@@ -140,6 +144,7 @@ Outputs are retained until the volume is deliberately removed. `docker compose d
 | --- | --- | --- |
 | GET | `/api/health` | Backend readiness and non-secret configuration metadata. |
 | POST | `/api/jobs` | Multipart upload using repeated `files` fields; returns HTTP 202 and a job ID. |
+| POST | `/api/jobs/{job_id}/files/{file_id}/send` | Retry delivery of saved protected tokens; stable submission ID. |
 | GET | `/api/jobs/{job_id}` | Saved batch and per-file status, metrics and output links. |
 | GET | `/api/jobs/{job_id}/files/{file_id}/preview?offset=0&limit=20` | Token columns and a page of rows; maximum page size 100. |
 | GET | `/api/jobs/{job_id}/files/{file_id}/download/tokens` | Individual token CSV. |
@@ -187,7 +192,7 @@ The browser interface uses the Nginx proxy in Compose; opening index.html as a l
 | `frontend/app.js` | File selection, drag-and-drop, validation, upload progress, polling, result rendering, previews and downloads. |
 | `frontend/styles.css` | Responsive visual styling, status cards and preview table. |
 | `frontend/nginx.conf` | Static file serving, API reverse proxy, request limit and response headers. |
-| Dockerfiles and `compose.yaml` | Frontend/backend images, private backend, startup health check, localhost port and persistent jobs volume. |
+| Dockerfiles and `compose.yaml` | Frontend/backend images, private backend, startup health check, localhost port and project-directory CSV/job storage. |
 | Requirements files | Added pinned runtime dependencies; root file forwards to backend requirements. |
 | `.dockerignore` / `.gitignore` | Exclude secrets from builds, and runtime outputs/caches from Git. |
 | `.env` / `.env.example` | Preserved shared prototype configuration and template. |
