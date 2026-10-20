@@ -29,6 +29,7 @@ REQUIRED_FIELDS = {
     "postcode",
     "phone",
     "fake_medicare_id",
+    "private_healthcare",
 }
 
 # Each tuple is (output column, ordered input fields/transformations).
@@ -114,6 +115,22 @@ COMBINATIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "email_dob_mdy_sex_postcode_phone_fake_medicare_id",
         ("email", "dob_mdy", "sex", "postcode", "phone", "fake_medicare_id"),
+    ),
+    # Private healthcare ID: fallback for patients without a Medicare number
+    # (e.g. international students). Mirrors the Medicare combinations.
+    ("first_last_private_healthcare", ("first_name", "last_name", "private_healthcare")),
+    (
+        "first_initial_last_initial_private_healthcare",
+        ("first_initial", "last_initial", "private_healthcare"),
+    ),
+    ("last_first_private_healthcare", ("last_name", "first_name", "private_healthcare")),
+    (
+        "email_dob_dmy_sex_postcode_phone_private_healthcare",
+        ("email", "dob_dmy", "sex", "postcode", "phone", "private_healthcare"),
+    ),
+    (
+        "email_dob_mdy_sex_postcode_phone_private_healthcare",
+        ("email", "dob_mdy", "sex", "postcode", "phone", "private_healthcare"),
     ),
 )
 

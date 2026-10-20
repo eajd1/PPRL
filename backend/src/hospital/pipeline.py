@@ -22,7 +22,7 @@ def validate_configuration() -> bytes:
 
 
 def process_file(source: Path, data_dir: Path, *, overwrite: bool = False,
-                 key: bytes | None = None) -> dict:
+                key: bytes | None = None) -> dict:
     """Clean, combine and tokenise exactly one CSV; no subprocesses or discovery."""
     key = validate_configuration() if key is None else key
     summary = cleaning.process_hospital(
