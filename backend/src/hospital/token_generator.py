@@ -236,12 +236,12 @@ def tokenise_file(
         # writer.writerow(["site_id", "local_patient_id", "token_version", "key_id", "method", *combination_columns])
         token_columns = [f"token{i}"for i in range(1, len(combination_columns) + 1)]
 
-        writer.writerow(["site_id", "local_patient_id", "token_version","key_id", "method", *token_columns])
-        for row in rows:
+    writer.writerow(["site_id", "local_patient_id", *token_columns])
+    for row in rows:
             tokens = [make_token(name, row[name], method, key) for name in combination_columns]
             for name, token in zip(combination_columns, tokens):
                 produced[name] += int(bool(token))
-            writer.writerow([site_id, row["local_patient_id"], TOKEN_SCHEME_VERSION, key_id, method, *tokens])
+            writer.writerow([site_id, row["local_patient_id"], *tokens])
 
     report = {
         "source_file": input_path.name,
