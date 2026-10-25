@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import csv
 import http.client
-import io
 import json
 import os
 import re
@@ -16,11 +15,8 @@ from urllib.parse import urlsplit
 
 def encode_record(hospital_id: str, record: dict) -> bytes:
     """Exactly one protected token per request, with its hospital and patient IDs."""
-    output = io.StringIO(newline="")
-    writer = csv.writer(output, lineterminator="\n")
-    writer.writerow(["hospitalID", "patientID", "token"])
-    writer.writerow([hospital_id, record["patient_id"], record["token"]])
-    return output.getvalue().encode("utf-8")
+    return json.dumps({"hospitalID": hospital_id, "patientID": record["patient_id"],
+                       "token": record["token"]}, separators=(",", ":")).encode("utf-8")
 
 
 def make_payload(token_file: Path, filename: str, submission_id: str) -> dict:
@@ -42,10 +38,9 @@ def make_payload(token_file: Path, filename: str, submission_id: str) -> dict:
             if any(value is None or (value and not re.fullmatch(r"[0-9a-f]{64}", value)) for value in values):
                 raise ValueError("Invalid protected token output; refusing transmission")
             for token_index, value in enumerate(values, start=1):
-                if value:  # Missing combinations do not produce tokens to transmit.
-                    records.append({"patient_id": patient_id, "token": value, "token_index": token_index})
+                records.append({"patient_id": patient_id, "token": value, "token_index": token_index})
         if not records:
-            raise ValueError("No nonblank tokens to send")
+            raise ValueError("No patient records to send")
     return {"submission_id": submission_id, "hospital_id": os.environ["HOSPITAL_ID"],
             "filename": filename, **metadata, "records": records}
 
@@ -64,12 +59,12 @@ def send_payload(payload: dict, *, url: str | None = None,
         raise ValueError("BROKER_URL must be an HTTPS origin, without a path or credentials")
     context = context or tls_context()
     if not payload["records"]:
-        raise ValueError("No nonblank tokens to send")
+        raise ValueError("No patient records to send")
     connection = None
     try:
         for index, record in enumerate(payload["records"]):
             body = encode_record(payload["hospital_id"], record)
-            headers = {"Content-Type": "text/csv; charset=utf-8",
+            headers = {"Content-Type": "application/json",
                        "X-Submission-ID": payload["submission_id"], "X-Original-Filename": payload["filename"],
                        "X-Token-Version": payload["token_version"], "X-Key-ID": payload["key_id"],
                        "X-Method": payload["method"], "X-Token-Count": str(len(payload["records"])),

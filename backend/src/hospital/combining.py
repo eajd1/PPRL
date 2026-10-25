@@ -153,7 +153,6 @@ def build_combination_strings(row: Mapping[str, str]) -> dict[str, str]:
     combinations = {}
     for column, fields in COMBINATIONS:
         parts = [values[field] for field in fields]
-        # If any field is missing, leave the combination blank.
         combinations[column] = SEPARATOR.join(parts)
     return combinations
 

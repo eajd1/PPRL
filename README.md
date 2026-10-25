@@ -1,6 +1,6 @@
 # Hospital PPRL upload application
 
-A hospital-local application for uploading CSV files, cleaning and consolidating patients, generating the existing 20 identifier combinations, and creating HMAC-SHA-256 tokens. The frontend shows the outcome for each file and provides token previews and downloads. Optional broker delivery sends individual hospital ID / local patient ID / protected token records over TLS 1.3 with mutual certificate authentication.
+A hospital-local application for uploading CSV files, cleaning and consolidating patients, generating the existing 20 identifier combinations, and creating HMAC-SHA-256 tokens. The frontend shows the outcome for each file and provides token previews and downloads. Optional broker delivery sends individual JSON records containing hospitalID, patientID and token over TLS 1.3 with mutual certificate authentication. No CSV is transferred between hospital and broker.
 
 **Four-laptop deployment:** see [the secure broker deployment guide](broker/README.md) for certificate generation, LAN configuration, hospital setup, operator login and end-to-end TLS tests. The broker runs independently using `compose.broker.yaml`; hospitals enable delivery using `compose.hospital.yaml`.
 
@@ -55,7 +55,7 @@ cleaning.process_hospital()
 
 The modules are separate Python files connected through normal Python imports and local generated CSVs. There are no subprocess calls in the pipeline. Patient consolidation is still inside cleaning.py. Detailed consolidation report output remains commented, as requested. combining.py and all 20 combination rules are unchanged.
 
-Each job has an unpredictable UUID. Every uploaded file gets its own folder even when multiple files have the same name. Uploaded raw CSVs, cleaned data, patient linkage data and identifier combinations remain on the local backend. With broker delivery enabled, each nonblank token is sent in its own mTLS request as `[hospitalID, patientID, token]`, using the existing `local_patient_id`. The original filename and retry information are separate metadata. Names and other raw identifying fields are excluded. The broker acknowledges the submission; failed deliveries can be retried without regenerating tokens.
+Each job has an unpredictable UUID. Every uploaded file gets its own folder even when multiple files have the same name. Uploaded raw CSVs, cleaned data, patient linkage data and identifier combinations remain on the local backend. With broker delivery enabled, each token position is sent in its own mTLS request as a JSON object containing `hospitalID`, `patientID` and `token`, using the existing `local_patient_id`. All 20 positions per patient are included; blank combinations are sent with an empty token value. The original filename and retry information are separate metadata. Names and other raw identifying fields are excluded. The broker acknowledges the submission; failed deliveries can be retried without regenerating tokens.
 
 The API accepts a job quickly, then processes it in a background thread. At most two jobs process concurrently; remaining jobs wait. The browser polls the saved status. If the backend restarts during processing, unfinished files are marked as interrupted and can be uploaded again. Previously completed outputs remain accessible.
 
@@ -81,7 +81,7 @@ site_id, local_patient_id, token_version, key_id, method, <20 token columns>
 
 The secret key is never a CSV column. `key_id` is only its non-secret label. Existing blank-combination handling remains unchanged.
 
-The hospital UI/API remains an unauthenticated, loopback-only local prototype. The separate broker uses TLS 1.3, mTLS certificate allowlisting for hospital submissions, and HTTPS operator authentication for the dashboard. No broker matching is implemented. Cleaning reports can contain local patient IDs and remain sensitive local outputs. See [broker security and deployment instructions](broker/README.md).
+The hospital UI/API remains an unauthenticated, loopback-only local prototype. The separate broker uses TLS 1.3, mTLS certificate allowlisting for hospital submissions, and HTTPS operator authentication for the dashboard. The operator dashboard shows received hospital IDs, patient IDs and full token values, with Hospital 1/2/3 filtering, pagination and automatic refresh. No broker matching is implemented; `process_received_records()` is a placeholder for PSI and the remaining broker functionality. Cleaning reports can contain local patient IDs and remain sensitive local outputs. See [broker security and deployment instructions](broker/README.md).
 
 ## Project structure
 
@@ -134,7 +134,7 @@ Runtime output structure inside the backend (bind-mounted to `backend/runtime/` 
         └── token_reports/
 ```
 
-Outputs remain in `backend/runtime/` until those host files are deliberately deleted. Broker receipts and token CSVs are stored in `broker/data/received/<submission-id>/`. No database is used. The flow is raw CSV -> cleaned CSV -> combinations CSV -> token CSV -> individual token requests with hospital/patient IDs -> broker token CSV storage; further broker processing is TODO.
+Outputs remain in `backend/runtime/` until those host files are deliberately deleted. Broker records and receipt metadata are stored in one CSV per hospital: `broker/data/received/hospital1.csv`, `hospital2.csv` and `hospital3.csv`. No database is used. The flow is raw CSV -> cleaned CSV -> combinations CSV -> token CSV -> individual JSON record requests with hospital/patient IDs -> broker token CSV storage. CSV files remain local to each application; further broker processing is TODO.
 
 If upgrading from the earlier named-volume setup, existing volume data is not automatically migrated or deleted. Before recreating a running hospital container, copy its old files with `docker compose cp backend:/app/runtime/. ./backend/runtime`. On Linux hosts, give UID 10001 write access to the bind-mounted runtime folder; Windows Docker Desktop uses Windows file permissions.
 

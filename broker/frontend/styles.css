@@ -1,5 +1,13 @@
-body { font: 16px/1.5 system-ui, sans-serif; background: #f5f7fa; color: #172936; margin: 0; }
-main { max-width: 760px; margin: 3rem auto; padding: 1.5rem; }
-ul { list-style: none; padding: 0; }
-li { background: white; border: 1px solid #d5dfe5; border-radius: 8px; margin: 1rem 0; padding: 1.2rem; overflow-wrap: anywhere; }
-p { margin: .4rem 0; } small { color: #526674; }
+* { box-sizing: border-box; }
+body { font: 16px/1.5 system-ui, sans-serif; background: #f3f6fa; color: #172936; margin: 0; }
+main { max-width: 1060px; margin: 3rem auto; padding: 0 1.5rem 3rem; }
+h1 { font-size: clamp(2rem, 5vw, 3rem); margin: .25rem 0; letter-spacing: -.04em; }
+p { margin: .4rem 0; } header > p { color: #526674; }
+.eyebrow { font-size: .75rem; font-weight: 700; letter-spacing: .16em; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin: 2rem 0 1rem; }
+select, button { font: inherit; padding: .6rem .9rem; border: 1px solid #c6d3df; border-radius: .5rem; background: white; color: inherit; }
+select { margin-left: .5rem; } button { cursor: pointer; } button:disabled { opacity: .45; cursor: default; }
+ul { list-style: none; padding: 0; display: grid; gap: .75rem; }
+li { background: white; border: 1px solid #dbe3eb; border-radius: .75rem; padding: 1.2rem; box-shadow: 0 2px 5px #17293605; overflow-wrap: anywhere; }
+strong { color: #155b75; } code { display: block; background: #f2f6f9; padding: .7rem; margin: .65rem 0; border-radius: .35rem; font-size: .85rem; overflow-wrap: anywhere; }
+small, #status, #page { color: #526674; } nav { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }

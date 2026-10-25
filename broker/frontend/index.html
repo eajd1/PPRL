@@ -1,11 +1,9 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PPRL Broker</title><link rel="stylesheet" href="/styles.css"><script src="/app.js" defer></script>
-</head>
-<body><main><h1>PPRL Broker</h1><h2>Received Files</h2>
-  <p id="status" role="status">Loading submissions…</p>
-  <ul id="submissions" aria-label="Received submissions"></ul>
-</main></body>
-</html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PPRL Broker</title><link rel="stylesheet" href="/styles.css"><script src="/app.js" defer></script></head>
+<body><main><header><p class="eyebrow">PPRL BROKER</p><h1>Received records</h1><p>Protected patient records from connected hospitals.</p></header>
+<section class="toolbar" aria-label="Record controls"><label for="hospital">Hospital <select id="hospital"><option value="">All hospitals</option><option value="hospital1">Hospital 1</option><option value="hospital2">Hospital 2</option><option value="hospital3">Hospital 3</option></select></label><p id="status" role="status">Loading records...</p></section>
+<ul id="records" aria-label="Received records"></ul>
+<nav aria-label="Record pages"><button id="previous" disabled>Previous</button><span id="page"></span><button id="next" disabled>Next</button></nav>
+</main></body></html>

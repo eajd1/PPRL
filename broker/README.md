@@ -10,8 +10,8 @@ implementation are unchanged.
 ```text
 Hospital browser -> local hospital API -> cleaning -> combinations -> HMAC
     -> HTTPS, TLS 1.3, hospital client certificate -> broker Nginx :8443
-    -> private Unix socket -> broker FastAPI -> received CSV files -> acknowledgement
-Operator browser -> HTTPS :9443 + operator login -> metadata dashboard
+    -> private Unix socket -> broker FastAPI -> record storage -> acknowledgement
+Operator browser -> HTTPS :9443 + operator login -> record dashboard
 ```
 
 Nginx requires a CA-verified client certificate. FastAPI maps the SHA-256
@@ -22,33 +22,27 @@ identity headers. The backend has **no TCP listener and no network interface**;
 only Nginx shares its Unix socket. Do not publish the API through another proxy
 or start it with a TCP listener: its proxy headers are trusted only on that socket.
 
-The hospital first completes the existing raw CSV -> cleaned CSV -> combinations
-CSV -> tokenised CSV pipeline locally. It then sends **one nonblank token per
-HTTPS request**, never the original uploaded CSV. Every request body is a CSV
-with exactly these columns and one data row:
+The hospital processes CSVs locally and sends **one JSON record per HTTPS request**:
 
-```csv
-hospitalID,patientID,token
-hospital1,0,<64-character HMAC token>
+```json
+{"hospitalID":"hospital1","patientID":"000123","token":"<64-character HMAC token>"}
 ```
 
-`hospitalID` is the configured hospital identity and must match the verified
-client certificate. `patientID` is the existing `local_patient_id`, preserved as
-text (including leading zeroes). A patient with 20 nonblank tokens produces 20
-requests with the same hospital/patient IDs and a different token in each.
-Blank combinations are skipped. The HMAC algorithm is unchanged.
+No CSV is transferred between hospital and broker. `hospitalID` must match the
+verified client certificate. `patientID` preserves the local patient ID, including
+leading zeroes. Every patient produces 20 records, one per combination. Blank
+combinations are included with `"token":""`; they are never skipped or hashed
+into a shared missing-value token. Nonblank HMAC values remain unchanged.
 
-Original filename, file submission ID, scheme version, key ID, token column
-position, record index and expected token count travel as HTTP metadata headers.
-Names, dates of birth, Medicare numbers, addresses, raw CSVs, combinations,
-reports and HMAC secrets are not sent. Local patient IDs **are** sent as explicitly
-required; the dashboard does not expose those IDs or token values.
+Submission ID, original filename, scheme version, key ID, token position, record
+index and expected count travel as HTTP headers for validation and safe retries.
+Raw identifiers, combinations, reports and HMAC secrets stay at the hospital.
 Keep original filenames free of patient information.
 
-TLS encrypts/decrypts traffic automatically. HMAC values remain unchanged and are
-not decrypted. Patient data remains CSV at every stage, including transport and
-broker storage. The broker only receives, saves and acknowledges individual tokens; further
-broker processing and matching are TODO.
+The operator dashboard shows received hospital IDs, patient IDs and full token
+values, with Hospital 1/2/3 filtering and pagination. It refreshes every three
+seconds and includes records from partially delivered submissions. Matching is
+not implemented. Broker storage remains local CSV files; transport is JSON.
 
 ## Prerequisites and LAN addresses
 
@@ -119,7 +113,7 @@ to this machine. The broker Compose file does not load the hospital `.env` into
 its API. Configure deployment variables separately:
 
 ```powershell
-Copy-Item broker/.env.example .env.broker
+if (-not (Test-Path .env.broker)) { Copy-Item broker/.env.example .env.broker }
 docker compose --env-file .env.broker -f compose.broker.yaml up -d --build
 ```
 
@@ -209,9 +203,9 @@ Transport errors are retried up to three times using the same submission UUID
 (derived from hospital identity, job UUID and file ID). An identical retry returns
 the existing receipt; reused IDs with different content or hospital identity are
 rejected with HTTP 409. Each token has a stable index within its original file submission. The single-worker
-broker atomically saves its CSV and updates the CSV receipt. A retry of an
+broker appends the record to its hospital CSV before acknowledging it. A retry of an
 already saved index returns the existing result; different content at that index
-is rejected. Receipt stays `receiving` until every expected token is saved.
+is rejected. The receipt stays `receiving` until every expected token is saved.
 Keep exactly one broker worker/process; the duplicate lock is in-process.
 Separate new uploads create separate submissions, even with identical filenames.
 
@@ -228,13 +222,15 @@ already committed. Cleaning failures still appear separately from delivery failu
 | --- | --- | --- |
 | POST :8443/api/submissions | CA-verified, allowlisted hospital certificate | 201 new token; 200 identical token retry |
 | GET :8443/api/health | CA-verified, allowlisted hospital certificate | Broker health |
-| GET :9443/api/submissions | Operator HTTPS Basic authentication | Latest 500 metadata entries, no tokens |
+| GET :9443/api/submissions | Operator HTTPS Basic authentication | Latest 500 submission receipts |
+| GET :9443/api/records | Operator HTTPS Basic authentication | Paginated records; optional hospital_id, offset and limit |
 | GET :9443/api/health | Operator authentication | Broker health |
 | GET :9443/ | Operator authentication | Auto-refreshing dashboard |
 
-The hospital sends one `text/csv` request for each nonblank token, with exactly
-`hospitalID,patientID,token`. API acknowledgements and dashboard responses remain
-ordinary JSON. Patient data is stored as CSV; there is no database.
+The hospital sends one `application/json` object per record, containing exactly
+`hospitalID`, `patientID` and `token`. CSV requests and multi-record requests are
+rejected. API acknowledgements and dashboard responses are JSON. Local broker
+storage uses CSV; there is no database.
 
 Project-directory file layout:
 
@@ -244,26 +240,28 @@ backend/runtime/<job-id>/files/<file-id>/
     output/cleaned/<stem>_cleaned.csv
     output/combinations/<stem>_combinations.csv
     output/tokens/<stem>_tokens.csv
-broker/data/received/<submission-id>/
-    metadata.csv
-    tokens/00000000-01.csv
-    tokens/00000001-02.csv
-    ...
+broker/data/received/
+    hospital1.csv
+    hospital2.csv
+    hospital3.csv
 ```
 
-Each received token CSV has exactly the three columns above and one data row.
-Its filename identifies the stable delivery index and original token column
-position (01 through 20). The hospital's wide token CSV remains unchanged.
-`metadata.csv` records the authenticated hospital, original filename, receipt
-time, scheme metadata, expected token count and number saved. The broker dashboard
-lists the original filename and reports `receiving` or `received`; it never reads
-patient IDs or HMAC values into its metadata response.
+Each hospital CSV contains all its received records, including hospital ID,
+patient ID, token, submission metadata and stable record/combination indexes.
+Files are created when a hospital first sends data. New records are appended and
+flushed to disk before acknowledgement. Receipts and sorted dashboard records
+are indexed in memory and rebuilt from these CSVs on startup, so refreshing the
+dashboard does not read thousands of individual files.
+
+Existing per-record files are automatically merged on startup. After the merged
+CSVs are committed, the old submission directories are moved to
+`broker/data/legacy-records/` as a backup; they are no longer used by the broker.
+Restarting migration does not duplicate records.
 
 If delivery is interrupted, saved tokens remain. Retry resends the same indexed
 tokens, acknowledges identical ones without duplication, and fills in the missing
-ones. An interrupted receipt update is recovered by counting the saved token CSVs
-on retry. Changed metadata or token content for an existing index is rejected.
-Extra CSV columns, multiple rows in a single request, empty/malformed tokens and
+ones. Receipts are reconstructed from hospital CSV rows after restart. Changed metadata or token content for an existing index is rejected.
+Extra JSON fields, multiple records in a single request, malformed nonblank tokens and
 hospital identities that differ from the verified certificate are rejected.
 
 The hospital retains its existing patient-linkage CSV and local diagnostic
@@ -291,7 +289,7 @@ production CSV folders or volumes. Never use `.test-credentials` for deployment.
 
 Checks cover three independent production hospital containers, actual CSV processing and transmission,
 unchanged tokens in received CSV files, local patient ID preservation and exclusion of other raw identifiers, strict schema,
-real metadata rendered by the dashboard JavaScript, duplicate/conflict handling,
+real records rendered by the dashboard JavaScript, duplicate/conflict handling,
 operator authentication, forged headers/body identity, no client certificate,
 untrusted and CA-signed-but-unlisted client certificates, wrong broker trust and hostname, and TLS 1.2
 rejection through the actual production Nginx configuration. The dashboard DOM
@@ -311,123 +309,3 @@ rejection when a hospital client bundle is removed or replaced.
 
 TLS configuration follows the official [Nginx SSL module documentation](https://nginx.org/en/docs/http/ngx_http_ssl_module.html)
 and Python's [SSLContext documentation](https://docs.python.org/3.12/library/ssl.html).
-
-
-## TL;DR: set up and start the four laptops
-
-Use **PowerShell from the project root** on each laptop, with Docker Desktop
-running in Linux-container mode. Connect all four laptops to the same private
-LAN. Replace `192.168.1.50` below with Laptop 4's actual IPv4 address (`ipconfig`).
-
-### 1. Generate certificates once on a trusted provisioning laptop
-
-Python 3 and OpenSSL 3 must be available in that terminal:
-
-```powershell
-python scripts/generate_certificates.py --broker-host 192.168.1.50 --broker-host localhost --broker-host 127.0.0.1
-```
-
-Enter and remember the operator password. Securely copy each generated bundle
-to the same path on its intended laptop:
-
-- Laptop 1: `certs/hospital1/`
-- Laptop 2: `certs/hospital2/`
-- Laptop 3: `certs/hospital3/`
-- Laptop 4: `certs/broker/`
-
-Keep `certs/ca/ca.key` offline on the provisioning machine. Do not distribute it.
-Run certificate generation only once for this setup, not separately on each laptop.
-
-### 2. Start the broker on Laptop 4
-
-Create its configuration if it does not already exist, then start:
-
-```powershell
-if (-not (Test-Path .env.broker)) { Copy-Item broker/.env.example .env.broker }
-docker compose --env-file .env.broker -f compose.broker.yaml up -d --build
-Import-Certificate -FilePath certs/broker/ca.crt -CertStoreLocation Cert:\CurrentUser\Root
-```
-
-Run this firewall command **once in an Administrator PowerShell terminal**:
-
-```powershell
-New-NetFirewallRule -DisplayName 'PPRL broker mTLS' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8443 -Profile Private -RemoteAddress LocalSubnet
-```
-
-Restart the browser, open **https://localhost:9443**, and sign in with username
-`operator` and the password entered during certificate generation.
-
-### 3. Configure the shared HMAC key on the three hospitals
-
-Generate a key **once on a trusted hospital provisioning machine**, then securely
-give the same key to all three hospitals, never to the broker:
-
-```powershell
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
-On **each hospital laptop**, create `.env` if missing and edit it:
-
-```powershell
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-notepad .env
-```
-
-Set `PPRL_TOKEN_KEY` to that shared hex key. Use the same `PPRL_KEY_ID` and
-`PPRL_TOKEN_VERSION` on all three hospitals. Preserve an existing agreed key
-instead of generating a replacement. Set `BROKER_URL` to
-`https://192.168.1.50:8443`, and save the matching `HOSPITAL_ID` and
-`HOSPITAL_TLS_DIR` shown in the start commands below in each laptop's `.env` too.
-
-### 4. Start each hospital in its own laptop's terminal
-
-**Laptop 1 — Hospital 1:**
-
-```powershell
-$env:HOSPITAL_ID = 'hospital1'
-$env:HOSPITAL_TLS_DIR = './certs/hospital1'
-docker compose -f compose.yaml -f compose.hospital.yaml up -d --build
-```
-
-**Laptop 2 — Hospital 2:**
-
-```powershell
-$env:HOSPITAL_ID = 'hospital2'
-$env:HOSPITAL_TLS_DIR = './certs/hospital2'
-docker compose -f compose.yaml -f compose.hospital.yaml up -d --build
-```
-
-**Laptop 3 — Hospital 3:**
-
-```powershell
-$env:HOSPITAL_ID = 'hospital3'
-$env:HOSPITAL_TLS_DIR = './certs/hospital3'
-docker compose -f compose.yaml -f compose.hospital.yaml up -d --build
-```
-
-### 5. Send a file and check receipt
-
-On each hospital, open **http://localhost:8080**, upload that hospital's CSV,
-and select **Send to broker**. On Laptop 4, the dashboard at
-**https://localhost:9443** should show the real filename and hospital. Receipt
-completes only after every nonblank token has been acknowledged.
-
-Hospital CSVs stay in `backend/runtime/`. Received token and receipt CSVs stay
-in `broker/data/received/`. Further broker processing is TODO.
-
-If a hospital cannot connect, run `Test-NetConnection 192.168.1.50 -Port 8443`
-there and check the detailed LAN/certificate instructions below.
-
-To stop services on a hospital:
-
-```powershell
-docker compose -f compose.yaml -f compose.hospital.yaml down
-```
-
-To stop services on the broker:
-
-```powershell
-docker compose --env-file .env.broker -f compose.broker.yaml down
-```
-
-These stop commands retain the CSV files in the project directory.

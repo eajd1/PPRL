@@ -16,7 +16,7 @@ Output (sent to the broker):
     site_id, local_patient_id, token_version, key_id, method, <token 1>, <token 2>, ...
 
 Each token column has the same name as the combination it came from.
-A blank combination (a field was missing) stays blank, so the broker skips it.
+A blank combination (a field was missing) stays blank, and is delivered as an empty token value.
 local_patient_id is copied unchanged and is never hashed: it is a local label
 each hospital uses to find its own patient when results come back.
 

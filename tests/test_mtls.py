@@ -82,7 +82,9 @@ class MutualTLSTests(unittest.TestCase):
         metadata = json.loads(body)
         self.assertTrue(set(expected).issubset({entry['filename'] for entry in metadata}))
         self.assertFalse(any('tokens' in entry for entry in metadata))
-        result = subprocess.run(['node', 'tests/dashboard_dom.js'], input=body, capture_output=True, text=True)
+        status, records, _ = self.request(self.operator_url, '/api/records', self.context(), headers={'Authorization': 'Basic ' + auth})
+        self.assertEqual(status, 200)
+        result = subprocess.run(['node', 'tests/dashboard_dom.js'], input=records, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         status, html, _ = self.request(self.operator_url, '/', self.context(), headers={'Authorization': 'Basic ' + auth})
         self.assertEqual(status, 200)
@@ -202,7 +204,7 @@ class MutualTLSTests(unittest.TestCase):
                     sid = item['broker_receipt']['submission_id']
                     stored = read_tokens(Path('/broker-data/received') / sid)
                     expected = [{'hospitalID': hospital, 'patientID': row['local_patient_id'], 'token': row[f'token{i}']}
-                                for row in local for i in range(1, 21) if row[f'token{i}']]
+                                for row in local for i in range(1, 21)]
                     self.assertEqual(stored, expected)
                     # Real retry endpoint returns the same receipt, not another submission.
                     retried = client.post(f"/api/jobs/{job['job_id']}/files/{item['file_id']}/send")
