@@ -95,7 +95,7 @@ class ReadCombinationsTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
 
     def test_missing_id_column(self):
-        self.assert_rejected([row()], "local_patient_id", ["hospital_id", *COMBOS])
+        self.assert_rejected([row()], "local_patient_id", ["hospital_id", "token1", "token2"])
 
     def test_duplicate_patient(self):
         self.assert_rejected([row(), row()], "repeats row 2")
@@ -137,12 +137,12 @@ class EndToEndTests(unittest.TestCase):
 
             h1 = list(csv.DictReader((out / "hospital1_tokens.csv").open()))
             h2 = list(csv.DictReader((out / "hospital2_tokens.csv").open()))
-            self.assertEqual(list(h1[0]), ["site_id", "local_patient_id", "token_version", "key_id", "method", *COMBOS])
+            self.assertEqual(list(h1[0]), ["site_id", "local_patient_id", "token_version", "key_id", "method", "token1", "token2"])
             self.assertEqual(h1[0]["local_patient_id"], "0")          # copied, not hashed
-            for name in COMBOS:
+            for name in ("token1", "token2"):
                 self.assertEqual(h1[0][name], h2[0][name])            # same patient matches
                 self.assertNotEqual(h1[0][name], h2[1][name])         # different patient doesn't
-            self.assertEqual(h2[1][COMBOS[1]], "")                    # blank stays blank
+            self.assertEqual(h2[1]["token2"], "")                    # blank stays blank
 
             text = (out / "hospital2_tokens.csv").read_text()
             for raw in ("lucy", "yoder", "9842414729", "+61457216934", "ponce"):

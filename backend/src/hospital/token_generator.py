@@ -15,7 +15,7 @@ Input  (one file per hospital, made by combining.py):
 Output (sent to the broker):
     site_id, local_patient_id, token_version, key_id, method, <token 1>, <token 2>, ...
 
-Each token column has the same name as the combination it came from.
+Output columns token1 through token20 follow the fixed combination order.
 A blank combination (a field was missing) stays blank, so the broker skips it.
 local_patient_id is copied unchanged and is never hashed: it is a local label
 each hospital uses to find its own patient when results come back.
@@ -68,7 +68,7 @@ MIN_KEY_BYTES = 32
 
 # Bump this if the hashing input format changes, so old and new tokens
 # can never match by accident.
-TOKEN_SCHEME_VERSION = os.environ.get("PPRL_TOKEN_VERSION", "v2")
+TOKEN_SCHEME_VERSION = os.environ.get("PPRL_TOKEN_VERSION", "v3")
 TOKEN_KEY_ID = os.environ.get("PPRL_KEY_ID", "")
 
 # Separates the version, combination name and value before hashing.

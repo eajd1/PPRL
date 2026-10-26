@@ -1,3 +1,5 @@
+> **Broker implemented:** See [BROKER.md](BROKER.md) for PostgreSQL, the shadcn/ui dashboard, coordinated configuration, submission flow, testing and known limitations. Generate configuration with `python backend/scripts/setup_demo.py` before the first Compose start. The sections below describe the hospital workflow.
+
 # Hospital PPRL upload application
 
 A hospital-local application for uploading CSV files, cleaning and consolidating patients, generating the existing 20 identifier combinations, and creating HMAC-SHA-256 tokens. The frontend shows the outcome for each file and provides token previews and downloads.
@@ -53,7 +55,7 @@ cleaning.process_hospital()
 
 The modules are separate Python files connected through normal Python imports and local generated CSVs. There are no subprocess calls in the pipeline. Patient consolidation is still inside cleaning.py. Detailed consolidation report output remains commented, as requested. combining.py and all 20 combination rules are unchanged.
 
-Each job has an unpredictable UUID. Every uploaded file gets its own folder even when multiple files have the same name. Uploaded raw CSVs, cleaned data, patient linkage data and identifier combinations remain on the local backend. There is no broker communication in this application.
+Each job has an unpredictable UUID. Every uploaded file gets its own folder even when multiple files have the same name. Uploaded raw CSVs, cleaned data, patient linkage data and identifier combinations remain on the local backend. Protected token files can be sent explicitly using Send to broker. Raw inputs and intermediate artifacts remain local.
 
 The API accepts a job quickly, then processes it in a background thread. At most two jobs process concurrently; remaining jobs wait. The browser polls the saved status. If the backend restarts during processing, unfinished files are marked as interrupted and can be uploaded again. Previously completed outputs remain accessible.
 
@@ -64,7 +66,7 @@ The root `.env` contains:
 ```dotenv
 PPRL_TOKEN_KEY=<shared prototype secret, encoded as hexadecimal>
 PPRL_KEY_ID=pprl-demo-2026-01
-PPRL_TOKEN_VERSION=v2
+PPRL_TOKEN_VERSION=v3
 ```
 
 Compose injects these values into the backend only. The secret is excluded from container build contents, frontend code, API responses, token CSVs and token reports. Direct Python execution reads the same root `.env`; process environment variables take precedence.
@@ -79,7 +81,7 @@ site_id, local_patient_id, token_version, key_id, method, <20 token columns>
 
 The secret key is never a CSV column. `key_id` is only its non-secret label. Existing blank-combination handling remains unchanged.
 
-This local demonstration does not implement authentication, hospital-based authorisation, HTTPS, broker matching or broker submission. Cleaning reports can contain local patient IDs and should be handled as sensitive local outputs. Keep this prototype on a trusted local machine; access controls are a separate deployment task.
+The hospital UI has no human-user authentication or HTTPS. Broker submission and weighted matching use hospital service credentials; see BROKER.md for scope and isolation limits. Cleaning reports can contain local patient IDs and should be handled as sensitive local outputs. Keep this prototype on a trusted local machine; access controls are a separate deployment task.
 
 ## Project structure
 

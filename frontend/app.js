@@ -112,6 +112,7 @@ function renderJob(job) {
       const actions = el('div', 'result-actions');
       const preview = el('button', 'button primary', 'View tokens'); preview.type = 'button'; preview.addEventListener('click', () => openPreview(file));
       actions.append(preview, link(file.downloads.tokens, 'Download CSV ↓'), link(file.downloads.token_report, 'Token report ↓'), link(file.downloads.cleaning_report, 'Cleaning report ↓')); card.append(actions);
+      addBrokerControls(card, file, job.job_id);
     } else if (file.status === 'failure') card.append(el('p', 'error-text', file.error || 'This file could not be processed.'));
     else card.append(el('p', 'result-details', file.status === 'processing' ? 'Cleaning, consolidating and generating tokens…' : 'Waiting for local processing…'));
     list.append(card);
@@ -217,3 +218,67 @@ async function initialise() {
   }
 }
 initialise();
+
+
+function addBrokerControls(card, file, jobId) {
+  const base = `/api/jobs/${jobId}/files/${file.file_id}`;
+  const section = el('div', 'broker-section');
+  const controls = el('div', 'result-actions');
+  const status = el('p', 'result-details', `Broker: ${file.broker_delivery?.status || 'not sent'}`);
+  const error = el('p', 'error-text');
+  const send = el('button', 'button primary', file.broker_delivery?.status === 'failed' ? 'Retry broker submission' : 'Send to broker');
+  const refresh = el('button', 'button secondary', 'View / refresh broker results');
+  send.type = refresh.type = 'button';
+  send.disabled = file.broker_delivery?.status === 'processed';
+  const output = el('div', 'table-scroll');
+  const paging = el('div', 'result-actions');
+  const previous = el('button', 'button secondary', 'Previous');
+  const next = el('button', 'button secondary', 'Next');
+  previous.type = next.type = 'button';
+  paging.append(previous, next); paging.hidden = true;
+  let offset = 0, timer;
+  function displayDelivery(delivery) {
+    status.textContent = `Broker: ${delivery.status.replaceAll('_', ' ')}`;
+    error.textContent = delivery.error || '';
+    send.textContent = delivery.status === 'failed' || delivery.status === 'sending' ? 'Retry broker submission' : 'Send to broker';
+    send.disabled = delivery.status === 'processed';
+  }
+  async function load() {
+    if (!section.isConnected) { clearTimeout(timer); return; }
+    refresh.disabled = true; error.textContent = '';
+    try {
+      const data = await getJson(`${base}/broker-results?offset=${offset}&limit=20`);
+      displayDelivery(data.delivery); output.replaceChildren();
+      if (data.items.length) {
+        const table = el('table'), head = el('tr');
+        ['Local patient ID', 'Global patient ID', 'Status', 'Latest arrival'].forEach(t => head.append(el('th', '', t)));
+        const thead = el('thead'); thead.append(head); table.append(thead);
+        const body = el('tbody');
+        data.items.forEach(item => { const row = el('tr');
+          [item.local_patient_id, item.global_patient_id || 'Pending review', item.status.replaceAll('_', ' '), new Date(item.latest_received_at).toLocaleString()].forEach(t => row.append(el('td', '', t)));
+          body.append(row);
+        });
+        table.append(body); output.append(table);
+      } else output.append(el('p', 'result-details', data.delivery.status === 'processed' ? 'No results.' : 'Results appear after matching completes.'));
+      paging.hidden = data.total <= 20; previous.disabled = offset === 0; next.disabled = offset + 20 >= data.total;
+      clearTimeout(timer);
+      if (data.delivery.status === 'accepted') timer = setTimeout(load, 2000);
+    } catch (e) { error.textContent = e.message; }
+    finally { refresh.disabled = false; }
+  }
+  send.addEventListener('click', async () => {
+    send.disabled = true; error.textContent = ''; status.textContent = 'Broker: sending�';
+    try {
+      const response = await fetch(`${base}/broker-submission`, { method: 'POST', signal: AbortSignal.timeout(40000) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Broker submission failed.');
+      displayDelivery(data);
+      if (data.status !== 'failed') await load();
+    } catch (e) { error.textContent = e.message; send.disabled = false; }
+  });
+  refresh.addEventListener('click', load);
+  previous.addEventListener('click', () => { offset = Math.max(0, offset - 20); load(); });
+  next.addEventListener('click', () => { offset += 20; load(); });
+  controls.append(send, refresh); section.append(status, error, controls, output, paging); card.append(section);
+  if (file.broker_delivery?.status === 'accepted') timer = setTimeout(load, 1000);
+}

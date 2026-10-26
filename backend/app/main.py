@@ -1,4 +1,4 @@
-"""Hospital-local upload API. No raw identifiers are transmitted to a broker."""
+"""Hospital-local processing API with explicit token-only broker delivery."""
 from __future__ import annotations
 
 import csv
@@ -15,7 +15,7 @@ from typing import Annotated
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from src.hospital import pipeline
+from src.hospital import pipeline, broker_client
 
 RUNTIME = Path(os.environ.get("PPRL_RUNTIME_DIR", Path(__file__).resolve().parents[1] / "runtime")).resolve()
 MAX_FILES = 20
@@ -98,6 +98,7 @@ def public_job(job: dict) -> dict:
         if item["status"] == "success":
             visible["downloads"] = {kind: f"{base}/download/{kind}" for kind in item["artifacts"]}
             visible["preview_url"] = f"{base}/preview"
+            visible["broker_delivery"] = broker_client.read_delivery(RUNTIME / job["job_id"] / "files" / item["file_id"] / "broker_delivery.json")
         result["files"].append(visible)
     return result
 
@@ -248,3 +249,18 @@ def download_all(job_id: str):
             temporary.unlink(missing_ok=True)
     return FileResponse(archive_path, media_type="application/zip",
                         filename=f"tokens_{job_id[:8]}.zip")
+
+
+@app.post("/api/jobs/{job_id}/files/{file_id}/broker-submission")
+def send_to_broker(job_id: str, file_id: str):
+    job, item = find_item(job_id, file_id)
+    path = artifact_path(job, item, "tokens")
+    delivery_path = RUNTIME / job_id / "files" / file_id / "broker_delivery.json"
+    return broker_client.send(path, delivery_path, item["hospital_id"])
+
+
+@app.get("/api/jobs/{job_id}/files/{file_id}/broker-results")
+def broker_results(job_id: str, file_id: str, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)):
+    job, item = find_item(job_id, file_id)
+    artifact_path(job, item, "tokens")
+    return broker_client.results(RUNTIME / job_id / "files" / file_id / "broker_delivery.json", item["hospital_id"], offset, limit)

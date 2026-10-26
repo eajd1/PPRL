@@ -6,3 +6,13 @@
 backend/runtime
 backend/src/data
 *.zip
+
+.venv
+.venv312
+.test-postgres
+.test-artifacts
+**/node_modules
+broker-dashboard/dist
+backend/tests
+broker-dashboard/test-results
+broker-dashboard/playwright-report
