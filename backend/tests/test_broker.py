@@ -22,14 +22,14 @@ from src.hospital.combining import build_combination_strings
 
 
 def row(site="1", pid="001", seed="person", positions=None):
-    positions = set(range(1, 21)) if positions is None else set(positions)
+    positions = set(range(1, 26)) if positions is None else set(positions)
     return {"site_id": site, "local_patient_id": pid, "token_version": "v3", "key_id": "test-key", "method": "hmac_sha256",
-            **{f"token{i}": hashlib.sha256(f"{seed}:{i}".encode()).hexdigest() if i in positions else "" for i in range(1, 21)}}
+            **{f"token{i}": hashlib.sha256(f"{seed}:{i}".encode()).hexdigest() if i in positions else "" for i in range(1, 26)}}
 
 
 def csv_bytes(rows):
     out = io.StringIO(newline="")
-    writer = csv.DictWriter(out, fieldnames=COLUMNS)
+    writer = csv.DictWriter(out, fieldnames=list(rows[0]))
     writer.writeheader()
     writer.writerows(rows)
     return out.getvalue().encode()
@@ -41,7 +41,57 @@ def config():
 
 
 def as_version(r):
-    return SimpleNamespace(tokens=[r[f"token{i}"] for i in range(1, 21)], **{k: r[k] for k in ("key_id", "method", "token_version")})
+    return SimpleNamespace(tokens=[r[f"token{i}"] for i in range(1, 26)], **{k: r[k] for k in ("key_id", "method", "token_version")})
+
+
+@pytest.mark.parametrize("positions,score,classification", [
+    ([21], 5, "below_threshold"), ([22], 2, "below_threshold"),
+    ([23], 5, "below_threshold"), ([24], 6, "review"), ([25], 6, "review"),
+    ([5, 6, 7, 21, 22, 23], 5, "below_threshold"),
+    ([19, 20, 24, 25], 6, "review"),
+    ([21, 24], 11, "review"), ([8, 21, 24], 14, "match"),
+])
+def test_private_healthcare_scores_share_existing_caps(positions, score, classification):
+    result = WeightedScorer().score(as_version(row()), as_version(row(positions=positions)))
+    assert (result["score"], result["classification"]) == (score, classification)
+    assert result["matched_tokens"] == positions
+
+
+def test_old_matching_snapshot_remains_compatible():
+    old = as_version(row())
+    old.tokens = old.tokens[:20]
+    result = WeightedScorer().score(old, as_version(row()))
+    assert result["score"] == 24
+    assert result["matched_tokens"] == list(range(1, 21))
+
+
+def test_hospital_export_is_accepted_by_broker(tmp_path):
+    from src.hospital.combining import COMBINATIONS
+    from src.hospital import token_generator as tg
+    path = tmp_path / "hospital1_combinations.csv"
+    with path.open("w", newline="") as output:
+        writer = csv.DictWriter(output, fieldnames=["hospital_id", "local_patient_id", *[c for c, _ in COMBINATIONS]])
+        writer.writeheader()
+        writer.writerow({"hospital_id": "1", "local_patient_id": "001",
+                         **{c: "synthetic" for c, _ in COMBINATIONS}})
+    report = tg.tokenise_file(path, tmp_path / "tokens", tmp_path / "reports", "hmac_sha256", b"x" * 32, "test-key")
+    data = Path(report["token_file"]).read_bytes()
+    records, duplicates = validate_csv(data, "1", config())
+    assert duplicates == 0 and len(records) == 1
+    assert records[0]["local_patient_id"] == "001"
+    assert len(records[0]) == 30
+    assert all(len(records[0][f"token{i}"]) == 64 for i in range(1, 26))
+
+
+def test_validation_rejects_old_or_incomplete_exports():
+    for remove in [("token_version", "key_id", "method"), tuple(f"token{i}" for i in range(21, 26)), ("token25",)]:
+        values = {k: v for k, v in row().items() if k not in remove}
+        out = io.StringIO(newline="")
+        writer = csv.DictWriter(out, fieldnames=list(values))
+        writer.writeheader()
+        writer.writerow(values)
+        with pytest.raises(ValidationError):
+            validate_csv(out.getvalue().encode(), "1", config())
 
 
 def test_missing_fields_are_not_hashed():
@@ -65,7 +115,7 @@ def test_validation_and_duplicate_handling():
     settings = config()
     rows, count = validate_csv(csv_bytes([row(), row()]), "1", settings)
     assert count == 1 and rows[0]["local_patient_id"] == "001"
-    for bad in [row(site="2"), row(pid=""), {**row(), "token1": "invalid"}, {**row(), "token_version": "v2"}]:
+    for bad in [row(site="2"), row(pid=""), {**row(), "token1": "invalid"}, {**row(), "token25": "invalid"}, {**row(), "token_version": "v2"}]:
         with pytest.raises(ValidationError):
             validate_csv(csv_bytes([bad]), "1", settings)
     with pytest.raises(ValidationError):
@@ -146,6 +196,44 @@ def test_equal_local_ids_not_identity_evidence(client):
     a = submit(client, [row()]); process(client)
     b = submit(client, [row("2", seed="different")], "2"); process(client)
     assert result(client, a["id"])[0]["global_patient_id"] != result(client, b["id"], "2")[0]["global_patient_id"]
+
+
+def test_private_healthcare_evidence_is_stored_and_links_hospitals(client):
+    from src.broker.models import RecordToken, Assessment
+    a = submit(client, [row(positions=[8, 21, 24])]); process(client)
+    b = submit(client, [row("2", "different", positions=[8, 21, 24])], "2"); process(client)
+    assert result(client, a["id"])[0]["global_patient_id"] == result(client, b["id"], "2")[0]["global_patient_id"]
+    with client.app.state.sessions() as db:
+        assert set(db.scalars(select(RecordToken.position))) == {8, 21, 24}
+        assert all(len(v.tokens) == 25 for v in db.scalars(select(RecordVersion)))
+        assert db.scalar(select(Assessment.score)) == 14
+
+
+def test_pre_upgrade_queued_submission_is_recoverable(client):
+    a = submit(client, [row()])
+    with client.app.state.sessions.begin() as db:
+        submission = db.scalar(select(Submission).where(Submission.id == uuid.UUID(a["id"])))
+        submission.payload = [{k: v for k, v in row().items() if k not in {f"token{i}" for i in range(21, 26)}}]
+    process(client)
+    assert result(client, a["id"])[0]["global_patient_id"]
+
+
+def test_unchanged_legacy_snapshot_keeps_content_time_and_global_id(client):
+    values = row(positions=range(1, 21))
+    a = submit(client, [values]); process(client)
+    before = result(client, a["id"])[0]
+    with client.app.state.sessions.begin() as db:
+        legacy = db.scalar(select(RecordVersion))
+        legacy.tokens = legacy.tokens[:20]
+        legacy_id = legacy.id
+    b = submit(client, [values]); process(client)
+    after = result(client, b["id"])[0]
+    assert after["global_patient_id"] == before["global_patient_id"]
+    assert after["content_changed_at"] == before["content_changed_at"]
+    assert after["latest_received_at"] > before["latest_received_at"]
+    with client.app.state.sessions() as db:
+        assert db.scalar(select(func.count()).select_from(RecordVersion)) == 2
+        assert len(db.get(RecordVersion, legacy_id).tokens) == 20
 
 
 def test_review_range_and_blank_records(client):

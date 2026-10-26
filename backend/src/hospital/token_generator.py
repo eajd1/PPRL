@@ -15,7 +15,7 @@ Input  (one file per hospital, made by combining.py):
 Output (sent to the broker):
     site_id, local_patient_id, token_version, key_id, method, <token 1>, <token 2>, ...
 
-Output columns token1 through token20 follow the fixed combination order.
+Output columns token1 through token25 follow the fixed combination order.
 A blank combination (a field was missing) stays blank, so the broker skips it.
 local_patient_id is copied unchanged and is never hashed: it is a local label
 each hospital uses to find its own patient when results come back.
@@ -234,12 +234,12 @@ def tokenise_file(
     with token_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle, lineterminator="\n")
         token_columns = [f"token{i}" for i in range(1, len(combination_columns) + 1)]
-        writer.writerow(["site_id", "local_patient_id", *token_columns])
+        writer.writerow(["site_id", "local_patient_id", "token_version", "key_id", "method", *token_columns])
         for row in rows:
             tokens = [make_token(name, row[name], method, key) for name in combination_columns]
             for name, token in zip(combination_columns, tokens):
                 produced[name] += int(bool(token))
-            writer.writerow([site_id, row["local_patient_id"], *tokens])
+            writer.writerow([site_id, row["local_patient_id"], TOKEN_SCHEME_VERSION, key_id, method, *tokens])
     report = {
         "source_file": input_path.name,
         "token_file": str(token_path),

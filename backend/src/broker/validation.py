@@ -2,7 +2,7 @@ import csv
 import io
 import re
 
-TOKEN_COLUMNS = [f"token{i}" for i in range(1, 21)]
+TOKEN_COLUMNS = [f"token{i}" for i in range(1, 26)]
 COLUMNS = ["site_id", "local_patient_id", "token_version", "key_id", "method", *TOKEN_COLUMNS]
 
 
@@ -18,7 +18,7 @@ def validate_csv(data: bytes, site_id: str, settings):
         reader = csv.reader(io.StringIO(text, newline=""), strict=True)
         headers = next(reader, [])
         if len(headers) != len(COLUMNS) or set(headers) != set(COLUMNS):
-            raise ValidationError("Expected exactly the 25 token CSV columns, without duplicate headers")
+            raise ValidationError("Expected 30 CSV columns: site_id, local_patient_id, token_version, key_id, method and token1 through token25; no duplicate or unexpected headers. Regenerate older files before sending.")
         records, duplicates = {}, 0
         for row_number, cells in enumerate(reader, 2):
             if row_number - 1 > settings.max_rows:

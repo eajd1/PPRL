@@ -152,7 +152,7 @@ def _format_date(value: str, output_format: str) -> str:
 
 
 def build_combination_strings(row: Mapping[str, str]) -> dict[str, str]:
-    """Build all 20 delimited combinations for one CSV row."""
+    """Build all 25 delimited combinations for one CSV row."""
     values = {field: (row.get(field) or "").strip() for field in REQUIRED_FIELDS}
     values.update(
         {

@@ -267,14 +267,15 @@ function addBrokerControls(card, file, jobId) {
     finally { refresh.disabled = false; }
   }
   send.addEventListener('click', async () => {
-    send.disabled = true; error.textContent = ''; status.textContent = 'Broker: sending…';
+    clearTimeout(timer);
+    send.disabled = true; error.textContent = ''; status.textContent = 'Broker: sending...';
     try {
       const response = await fetch(`${base}/broker-submission`, { method: 'POST', signal: AbortSignal.timeout(40000) });
       const data = await response.json();
       if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Broker submission failed.');
       displayDelivery(data);
       if (data.status !== 'failed') await load();
-    } catch (e) { error.textContent = e.message; send.disabled = false; }
+    } catch (e) { displayDelivery({ status: 'failed', error: e.message }); }
   });
   refresh.addEventListener('click', load);
   previous.addEventListener('click', () => { offset = Math.max(0, offset - 20); load(); });

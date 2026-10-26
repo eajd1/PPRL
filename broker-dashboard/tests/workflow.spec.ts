@@ -10,6 +10,11 @@ const credential = process.env.BROKER_UI_TOKEN || readFileSync(resolve(root, '.e
 test('hospital sends three token files and dashboard inspects links and reviews', async ({ page }) => {
   const browserErrors: string[] = []
   page.on('pageerror', error => browserErrors.push(error.message))
+  const existing = await page.request.get(`${brokerUrl}/api/v1/admin/submissions?status=processed`, {
+    headers: { Authorization: `Bearer ${credential}` },
+  })
+  expect(existing.ok()).toBeTruthy()
+  const processedBefore = (await existing.json()).total
   await page.goto(hospitalUrl)
   await page.locator('#fileInput').setInputFiles([1, 2, 3].map(i => resolve(root, `backend/dataset/hospital${i}.csv`)))
   await page.locator('#processButton').click()
@@ -40,7 +45,7 @@ test('hospital sends three token files and dashboard inspects links and reviews'
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Submissions', exact: true }).click()
   await page.getByRole('tab', { name: 'Processed', exact: true }).click()
-  await expect(page.getByRole('button', { name: /^Inspect / })).toHaveCount(3)
+  await expect(page.getByRole('button', { name: /^Inspect / })).toHaveCount(Math.min(processedBefore + 3, 20))
   await page.reload()
   await expect(page.getByLabel('Administrator credential')).toBeVisible()
   expect(await page.evaluate(() => localStorage.length)).toBe(0)

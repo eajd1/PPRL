@@ -22,7 +22,7 @@ Stop with Ctrl+C, or run `docker compose down` from another terminal. Jobs are s
 2. Review the selected files; remove individual files or clear the selection as needed.
 3. Select **Generate tokens**. Upload progress and processing status appear automatically.
 4. Review each file's **Success** or **Failed** status. One failed file does not prevent other files from completing.
-5. Select **View tokens** to inspect full token values in a paginated table. Scroll horizontally to see all 20 token columns.
+5. Select **View tokens** to inspect full token values in a paginated table. Scroll horizontally to see all 25 token columns.
 6. Select **Download CSV** for an individual file, or **Download all tokens** for a ZIP of successful token outputs. Token reports and cleaning reports are also available.
 
 The latest job is restored after refreshing the same browser tab. Job IDs are kept in session storage; no secret keys or patient data are stored there. Browser downloads save files to your normal download location.
@@ -53,7 +53,7 @@ cleaning.process_hospital()
   → token_generator.tokenise_file()
 ```
 
-The modules are separate Python files connected through normal Python imports and local generated CSVs. There are no subprocess calls in the pipeline. Patient consolidation is still inside cleaning.py. Detailed consolidation report output remains commented, as requested. combining.py and all 20 combination rules are unchanged.
+The modules are separate Python files connected through normal Python imports and local generated CSVs. There are no subprocess calls in the pipeline. Patient consolidation is still inside cleaning.py. Detailed consolidation report output remains commented, as requested. The original 20 combination rules are preserved, with five private-healthcare combinations appended as tokens 21–25.
 
 Each job has an unpredictable UUID. Every uploaded file gets its own folder even when multiple files have the same name. Uploaded raw CSVs, cleaned data, patient linkage data and identifier combinations remain on the local backend. Protected token files can be sent explicitly using Send to broker. Raw inputs and intermediate artifacts remain local.
 
@@ -76,7 +76,7 @@ Securely provision the same key, key ID and version to participating hospital ba
 A token CSV contains:
 
 ```text
-site_id, local_patient_id, token_version, key_id, method, <20 token columns>
+site_id, local_patient_id, token_version, key_id, method, <25 token columns>
 ```
 
 The secret key is never a CSV column. `key_id` is only its non-secret label. Existing blank-combination handling remains unchanged.

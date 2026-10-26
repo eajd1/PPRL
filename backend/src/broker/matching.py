@@ -52,14 +52,18 @@ def process_record(db, submission, row, scorer):
     record = db.scalar(select(HospitalRecord).where(HospitalRecord.site_id == submission.site_id,
                                                    HospitalRecord.local_patient_id == row["local_patient_id"]))
     received = submission.received_at
-    tokens = [row[name] for name in TOKEN_COLUMNS]
+    # Submissions accepted before the 25-token upgrade may still be queued.
+    # Only the five appended positions can be absent in that validated payload.
+    tokens = [row[name] if i < 20 else row.get(name, "") for i, name in enumerate(TOKEN_COLUMNS)]
     if record is None:
         record = HospitalRecord(site_id=submission.site_id, local_patient_id=row["local_patient_id"],
                                 first_received_at=received, latest_received_at=received, content_changed_at=received)
         db.add(record)
         db.flush()
     previous = db.get(RecordVersion, record.latest_version_id) if record.latest_version_id else None
-    if previous is None or previous.tokens != tokens or any(getattr(previous, k) != row[k] for k in ("token_version", "key_id", "method")):
+    # Appending missing private-healthcare positions is not a content change.
+    previous_tokens = previous.tokens + [""] * (len(TOKEN_COLUMNS) - len(previous.tokens)) if previous else None
+    if previous is None or previous_tokens != tokens or any(getattr(previous, k) != row[k] for k in ("token_version", "key_id", "method")):
         record.content_changed_at = received
     record.latest_received_at = received
     version = RecordVersion(record_id=record.id, submission_id=submission.id, received_at=received,
