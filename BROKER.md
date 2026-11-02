@@ -17,6 +17,20 @@ The setup script refuses to overwrite existing configuration. It creates `.env` 
 - Broker dashboard: http://localhost:8081
 - Broker API reference: http://localhost:8081/docs
 
+PostgreSQL is published on host port `5432` for external database clients. Restrict inbound TCP/5432 in the host/cloud firewall to your pgAdmin client IP; do not expose it to all internet sources. PostgreSQL TLS is not configured in this demo, so use a trusted network or an SSH tunnel for the connection.
+
+To connect with pgAdmin, create a server and use:
+
+| Field | Value |
+|---|---|
+| Host name/address | Public IP address or DNS name of the Docker host |
+| Port | `5432` |
+| Maintenance database | `pprl` |
+| Username | `pprl` |
+| Password | `POSTGRES_PASSWORD` from the host's `.env.postgres` |
+
+Keep the database password private. If the password was shared or is weak, rotate it before enabling external access.
+
 Copy the `BROKER_ADMIN_TOKEN` value from `.env.admin` into the dashboard credential field. The browser holds it only in memory; refreshing the page signs out. Service credentials are only used by hospital backends. The broker container never receives the hospital `.env` or HMAC key.
 
 Upload the three synthetic CSVs from `backend/dataset`, wait for processing, then select **Send to broker** on each successful file. The result card shows arrival and matching status, with paginated local/global patient IDs. A delivery failure does not change hospital processing success. Retry uses the same submission identifier, including after a lost response. A fresh upload/job creates an intentional new submission.
