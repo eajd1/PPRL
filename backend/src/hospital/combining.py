@@ -29,6 +29,7 @@ REQUIRED_FIELDS = {
     "postcode",
     "phone",
     "fake_medicare_id",
+    "private_healthcare",
 }
 
 # Each tuple is (output column, ordered input fields/transformations).
@@ -115,6 +116,28 @@ COMBINATIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "email_dob_mdy_sex_postcode_phone_fake_medicare_id",
         ("email", "dob_mdy", "sex", "postcode", "phone", "fake_medicare_id"),
     ),
+    # Private healthcare ID: fallback for patients without a Medicare number
+    # (e.g. international students). Mirrors the Medicare combinations.
+    (
+        "first_last_private_healthcare",
+        ("first_name", "last_name", "private_healthcare"),
+    ),
+    (
+        "first_initial_last_initial_private_healthcare",
+        ("first_initial", "last_initial", "private_healthcare"),
+    ),
+    (
+        "last_first_private_healthcare",
+        ("last_name", "first_name", "private_healthcare"),
+    ),
+    (
+        "email_dob_dmy_sex_postcode_phone_private_healthcare",
+        ("email", "dob_dmy", "sex", "postcode", "phone", "private_healthcare"),
+    ),
+    (
+        "email_dob_mdy_sex_postcode_phone_private_healthcare",
+        ("email", "dob_mdy", "sex", "postcode", "phone", "private_healthcare"),
+    ),
 )
 
 
@@ -135,7 +158,7 @@ def _format_date(value: str, output_format: str) -> str:
 
 
 def build_combination_strings(row: Mapping[str, str]) -> dict[str, str]:
-    """Build all 20 delimited combinations for one CSV row."""
+    """Build all 25 delimited combinations for one CSV row."""
     values = {field: (row.get(field) or "").strip() for field in REQUIRED_FIELDS}
     values.update(
         {
@@ -146,7 +169,7 @@ def build_combination_strings(row: Mapping[str, str]) -> dict[str, str]:
             "dob_mdy": _format_date(values["date_of_birth"], "%m/%d/%Y"),
         }
     )
-        # Unknown sex is not evidence, so treat it as missing.
+    # Unknown sex is not evidence, so treat it as missing.
     if values["sex"] == "U":
         values["sex"] = ""
 
@@ -171,7 +194,7 @@ def create_combination_csv(input_path: Path, output_path: Path) -> int:
         with output_path.open("w", newline="", encoding="utf-8") as destination:
             writer = csv.DictWriter(
                 destination,
-                    fieldnames=[*ID_COLUMNS, *(column for column, _ in COMBINATIONS)],
+                fieldnames=[*ID_COLUMNS, *(column for column, _ in COMBINATIONS)],
             )
             writer.writeheader()
             row_count = 0
@@ -200,7 +223,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         name = input_path.stem.replace("_linkage_patients", "")
         output_path = args.output_dir / f"{name}_combinations.csv"
         rows = create_combination_csv(input_path, output_path)
-        print(f"Wrote {len(COMBINATIONS)} combinations for {rows} rows to {output_path}")
+        print(
+            f"Wrote {len(COMBINATIONS)} combinations for {rows} rows to {output_path}"
+        )
     return 0
 
 

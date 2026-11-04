@@ -1,11 +1,15 @@
-# Apply on each hospital laptop, in addition to compose.yaml.
+# Each hospital gets only its own bundle and service credential.
 services:
   backend:
     environment:
-      BROKER_URL: ${BROKER_URL:?Set BROKER_URL to the broker LAN HTTPS origin}
-      HOSPITAL_ID: ${HOSPITAL_ID:?Set HOSPITAL_ID to hospital1, hospital2 or hospital3}
-      BROKER_CA_FILE: /run/hospital-tls/ca.crt
-      HOSPITAL_CERT_FILE: /run/hospital-tls/client.crt
-      HOSPITAL_KEY_FILE: /run/hospital-tls/client.key
-    volumes:
-      - ${HOSPITAL_TLS_DIR:?Set HOSPITAL_TLS_DIR to this hospital certificate bundle}:/run/hospital-tls:ro
+      HOSPITAL_ID: ${HOSPITAL_ID:?Set numeric hospital ID}
+      PPRL_BROKER_URL: ${PPRL_BROKER_URL:?Set broker HTTPS origin}
+    volumes: !override
+      - ./backend/runtime:/app/runtime
+      - ${HOSPITAL_TLS_DIR:?Set hospital certificate bundle}:/run/hospital-tls/hospital${HOSPITAL_ID:?Set numeric hospital ID}:ro
+  postgres:
+    profiles: [broker]
+  broker:
+    profiles: [broker]
+  broker-proxy:
+    profiles: [broker]

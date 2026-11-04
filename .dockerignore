@@ -16,3 +16,11 @@ secrets
 .test-credentials
 broker/data
 .venv
+.venv312
+.test-postgres
+.test-artifacts
+**/node_modules
+broker-dashboard/dist
+**/tests
+broker-dashboard/test-results
+broker-dashboard/playwright-report

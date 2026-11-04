@@ -17,7 +17,7 @@ function updateControls() {
   $('browseButton').disabled = state.busy;
   $('clearButton').disabled = state.busy;
   $('dropzone').classList.toggle('locked', state.busy);
-  $('uploadHint').textContent = state.busy ? 'Preparing records for the broker in the background.' : state.files.length ? 'Your selected files are ready to prepare for the broker.' : 'Choose CSV files to prepare for the broker.';
+  $('uploadHint').textContent = state.busy ? 'Preparing your files. You can review results below.' : state.files.length ? 'Your selected files are ready to process.' : 'Choose files to start preparing tokens.';
 }
 function renderSelection() {
   const list = $('selectedFiles'); list.replaceChildren();
@@ -86,11 +86,9 @@ function renderJob(job) {
   const succeeded = job.files.filter(f => f.status === 'success').length;
   const failed = job.files.filter(f => f.status === 'failure').length;
   const pending = job.files.length - succeeded - failed;
-  const received = job.files.filter(file => file.broker_status === 'received').length;
-  const deliveryFailures = job.files.filter(file => file.broker_status === 'failed').length;
-  $('resultSummary').textContent = pending ? `${succeeded} prepared · ${failed} failed · ${pending} preparing` : `${succeeded} prepared · ${received} received by broker${deliveryFailures ? ` · ${deliveryFailures} delivery failed` : ''}${failed ? ` · ${failed} processing failed` : ''}.`;
+  $('resultSummary').textContent = pending ? `${succeeded} complete · ${failed} failed · ${pending} preparing` : `${succeeded} ${succeeded === 1 ? 'file' : 'files'} completed successfully${failed ? ` · ${failed} failed` : ''}.`;
   const stats = $('resultStats'); stats.replaceChildren();
-  for (const [value, label] of [[received, 'Files received by broker'], [failed + deliveryFailures, 'Files needing attention'], [job.files.reduce((sum, f) => sum + (f.patients || 0), 0), 'Patient records prepared']]) {
+  for (const [value, label] of [[succeeded, 'Files completed'], [failed, 'Files failed'], [job.files.reduce((sum, f) => sum + (f.patients || 0), 0), 'Patient rows tokenised']]) {
     const stat = el('div', 'stat'); stat.append(el('strong', '', String(value)), el('span', '', label)); stats.append(stat);
   }
   $('downloadAll').hidden = !succeeded || !finalStatuses.has(job.status);
@@ -101,11 +99,10 @@ function renderJob(job) {
     const head = el('div', 'result-head'); head.append(el('span', 'csv-badge', 'CSV'));
     const title = el('div', 'file-copy'); title.append(el('h3', '', file.filename));
     if (file.hospital_id !== undefined) title.append(el('div', 'file-meta', `Hospital ${file.hospital_id}`));
-    const status = file.status === 'success' ? ({ received: 'Received by broker', failed: 'Delivery failed', sending: 'Sending to broker' }[file.broker_status] || 'Ready for broker') : ({ failure: 'Failed', queued: 'Queued', processing: 'Processing' }[file.status] || file.status);
-    head.append(title, el('span', `status-badge ${file.broker_status === 'failed' ? 'failure' : file.status}`, status)); card.append(head);
+    head.append(title, el('span', `status-badge ${file.status}`, { success: 'Success', failure: 'Failed', queued: 'Queued', processing: 'Processing' }[file.status] || file.status)); card.append(head);
     if (file.status === 'success') {
       const metrics = el('div', 'metrics');
-      for (const [value, label] of [[file.input_rows, 'Uploaded rows'], [file.patients, 'Unique patients'], [file.tokens_generated, 'Protected tokens prepared']]) {
+      for (const [value, label] of [[file.input_rows, 'Uploaded rows'], [file.patients, 'Unique patients'], [file.tokens_generated, 'Tokens generated']]) {
         const metric = el('div', 'metric'); metric.append(el('strong', '', String(value)), el('span', '', label)); metrics.append(metric);
       }
       card.append(metrics);
@@ -113,25 +110,11 @@ function renderJob(job) {
       if (invalid.length) card.append(el('p', 'result-warning', `Invalid values replaced with blanks — ${invalid.join(' · ')}. Processing succeeded for the remaining data.`));
       if (file.patients_with_no_tokens) card.append(el('p', 'result-warning', `${file.patients_with_no_tokens} patient rows contain no tokens because their identifier combinations are incomplete.`));
       const actions = el('div', 'result-actions');
-      if (file.broker_status === 'received') card.append(el('p', 'result-details', `Broker acknowledged receipt at ${new Date(file.broker_receipt.received_at).toLocaleString()}.`));
-      if (file.broker_status === 'failed') {
-        card.append(el('p', 'result-warning', file.broker_error));
-        const retry = el('button', 'button primary', 'Retry sending'); retry.type = 'button';
-        retry.disabled = !finalStatuses.has(job.status);
-        retry.addEventListener('click', async () => {
-          retry.disabled = true; retry.textContent = 'Sending…';
-          try {
-            const response = await fetch(`/api/jobs/${job.job_id}/files/${file.file_id}/send`, { method: 'POST', signal: AbortSignal.timeout(120000) });
-            if (!response.ok) throw new Error('Could not retry broker delivery.');
-            renderJob(await response.json());
-          } catch (error) { setError(error.message); retry.disabled = false; retry.textContent = 'Retry sending'; }
-        });
-        actions.append(retry);
-      }
-      const preview = el('button', 'button primary', 'Inspect prepared records'); preview.type = 'button'; preview.addEventListener('click', () => openPreview(file));
+      const preview = el('button', 'button primary', 'View tokens'); preview.type = 'button'; preview.addEventListener('click', () => openPreview(file));
       actions.append(preview, link(file.downloads.tokens, 'Download CSV ↓'), link(file.downloads.token_report, 'Token report ↓'), link(file.downloads.cleaning_report, 'Cleaning report ↓')); card.append(actions);
+      addBrokerControls(card, file, job.job_id);
     } else if (file.status === 'failure') card.append(el('p', 'error-text', file.error || 'This file could not be processed.'));
-    else card.append(el('p', 'result-details', file.status === 'processing' ? 'Preparing protected records for the broker…' : 'Waiting for local processing…'));
+    else card.append(el('p', 'result-details', file.status === 'processing' ? 'Cleaning, consolidating and generating tokens…' : 'Waiting for local processing…'));
     list.append(card);
   }
 }
@@ -141,7 +124,7 @@ async function pollJob(id) {
     try {
       const job = await getJson(`/api/jobs/${id}`); consecutiveErrors = 0; setError(''); renderJob(job);
       if (finalStatuses.has(job.status)) return job;
-      $('progressLabel').textContent = job.files.some(file => file.broker_status === 'sending') ? 'Sending tokens individually to the broker…' : 'Preparing records locally…'; $('progressValue').textContent = `${job.files.filter(f => f.status === 'success' || f.status === 'failure').length} / ${job.files.length} files prepared`;
+      $('progressLabel').textContent = 'Preparing token files…'; $('progressValue').textContent = `${job.files.filter(f => f.status === 'success' || f.status === 'failure').length} / ${job.files.length} files`;
     } catch (error) {
       consecutiveErrors++;
       if (consecutiveErrors >= 5) throw new Error(`${error.message} Your job is saved. Reload this page to check its results.`);
@@ -160,10 +143,8 @@ async function processFiles() {
     const form = new FormData(); state.files.forEach(file => form.append('files', file));
     const job = await upload(form); saveJobId(job.job_id); renderJob(job);
     $('resultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    const completed = await pollJob(job.job_id);
-    const delivered = completed.files.filter(file => file.broker_status === 'received').length;
-    const deliveryFailed = completed.files.some(file => file.broker_status === 'failed');
-    $('progressLabel').textContent = deliveryFailed ? 'Preparation finished. Some broker deliveries failed; retry below.' : delivered ? `${delivered} file(s) received by the broker.` : 'Preparation finished. No files were sent to a broker.'; $('progressValue').textContent = '';
+    await pollJob(job.job_id);
+    $('progressLabel').textContent = 'Processing finished.'; $('progressValue').textContent = '';
     state.files = [];
   } catch (error) { setError(error.message); $('progressLabel').textContent = 'Processing could not be completed.'; }
   finally { state.busy = false; renderSelection(); }
@@ -237,3 +218,68 @@ async function initialise() {
   }
 }
 initialise();
+
+
+function addBrokerControls(card, file, jobId) {
+  const base = `/api/jobs/${jobId}/files/${file.file_id}`;
+  const section = el('div', 'broker-section');
+  const controls = el('div', 'result-actions');
+  const status = el('p', 'result-details', `Broker: ${file.broker_delivery?.status || 'not sent'}`);
+  const error = el('p', 'error-text');
+  const send = el('button', 'button primary', file.broker_delivery?.status === 'failed' ? 'Retry broker submission' : 'Send to broker');
+  const refresh = el('button', 'button secondary', 'View / refresh broker results');
+  send.type = refresh.type = 'button';
+  send.disabled = file.broker_delivery?.status === 'processed';
+  const output = el('div', 'table-scroll');
+  const paging = el('div', 'result-actions');
+  const previous = el('button', 'button secondary', 'Previous');
+  const next = el('button', 'button secondary', 'Next');
+  previous.type = next.type = 'button';
+  paging.append(previous, next); paging.hidden = true;
+  let offset = 0, timer;
+  function displayDelivery(delivery) {
+    status.textContent = `Broker: ${delivery.status.replaceAll('_', ' ')}`;
+    error.textContent = delivery.error || '';
+    send.textContent = delivery.status === 'failed' || delivery.status === 'sending' ? 'Retry broker submission' : 'Send to broker';
+    send.disabled = delivery.status === 'processed';
+  }
+  async function load() {
+    if (!section.isConnected) { clearTimeout(timer); return; }
+    refresh.disabled = true; error.textContent = '';
+    try {
+      const data = await getJson(`${base}/broker-results?offset=${offset}&limit=20`);
+      displayDelivery(data.delivery); output.replaceChildren();
+      if (data.items.length) {
+        const table = el('table'), head = el('tr');
+        ['Local patient ID', 'Global patient ID', 'Status', 'Latest arrival'].forEach(t => head.append(el('th', '', t)));
+        const thead = el('thead'); thead.append(head); table.append(thead);
+        const body = el('tbody');
+        data.items.forEach(item => { const row = el('tr');
+          [item.local_patient_id, item.global_patient_id || 'Pending review', item.status.replaceAll('_', ' '), new Date(item.latest_received_at).toLocaleString()].forEach(t => row.append(el('td', '', t)));
+          body.append(row);
+        });
+        table.append(body); output.append(table);
+      } else output.append(el('p', 'result-details', data.delivery.status === 'processed' ? 'No results.' : 'Results appear after matching completes.'));
+      paging.hidden = data.total <= 20; previous.disabled = offset === 0; next.disabled = offset + 20 >= data.total;
+      clearTimeout(timer);
+      if (data.delivery.status === 'accepted') timer = setTimeout(load, 2000);
+    } catch (e) { error.textContent = e.message; }
+    finally { refresh.disabled = false; }
+  }
+  send.addEventListener('click', async () => {
+    clearTimeout(timer);
+    send.disabled = true; error.textContent = ''; status.textContent = 'Broker: sending...';
+    try {
+      const response = await fetch(`${base}/broker-submission`, { method: 'POST', signal: AbortSignal.timeout(40000) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Broker submission failed.');
+      displayDelivery(data);
+      if (data.status !== 'failed') await load();
+    } catch (e) { displayDelivery({ status: 'failed', error: e.message }); }
+  });
+  refresh.addEventListener('click', load);
+  previous.addEventListener('click', () => { offset = Math.max(0, offset - 20); load(); });
+  next.addEventListener('click', () => { offset += 20; load(); });
+  controls.append(send, refresh); section.append(status, error, controls, output, paging); card.append(section);
+  if (file.broker_delivery?.status === 'accepted') timer = setTimeout(load, 1000);
+}

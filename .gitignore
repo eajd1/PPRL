@@ -243,3 +243,21 @@ certs/
 operator.htpasswd
 allowlist.json
 .test-credentials/
+
+# Broker development and generated artifacts
+.venv/
+.venv312/
+.test-postgres/
+.test-artifacts/
+node_modules/
+broker-dashboard/dist/
+.env.broker
+.env.postgres
+.env.hospital
+!.env.broker.example
+!.env.postgres.example
+broker-dashboard/test-results/
+broker-dashboard/playwright-report/
+uploaded-job-files/*
+
+*.dump

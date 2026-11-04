@@ -1,4 +1,4 @@
-"""Hospital-local CSV processing and token-by-token broker delivery."""
+"""Hospital-local processing API with explicit token-only broker delivery."""
 from __future__ import annotations
 
 import csv
@@ -15,8 +15,7 @@ from typing import Annotated
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from src.hospital import pipeline
-from app import broker_client
+from src.hospital import pipeline, broker_client
 
 RUNTIME = Path(os.environ.get("PPRL_RUNTIME_DIR", Path(__file__).resolve().parents[1] / "runtime")).resolve()
 MAX_FILES = 20
@@ -40,26 +39,18 @@ def save_job(job: dict) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     pipeline.validate_configuration()
-    if os.environ.get("BROKER_URL"):
-        if os.environ.get("HOSPITAL_ID") not in {"hospital1", "hospital2", "hospital3"}:
-            raise RuntimeError("Configure HOSPITAL_ID as hospital1, hospital2 or hospital3")
-        broker_client.tls_context()  # Fail startup when certificate files are missing or invalid.
+    if os.environ.get("PPRL_BROKER_URL"):
+        for site in json.loads(os.environ.get("PPRL_BROKER_CREDENTIALS", "{}")):
+            broker_client.tls_context(site)
     RUNTIME.mkdir(parents=True, exist_ok=True)
     # An interrupted local process cannot resume in-memory background work.
     for manifest in RUNTIME.glob("*/job.json"):
         job = json.loads(manifest.read_text(encoding="utf-8"))
-        interrupted_delivery = False
-        for item in job["files"]:
-            if item.get("broker_status") == "sending":
-                item.update(broker_status="failed", broker_error="Broker delivery was interrupted. Retry sending the saved output.")
-                interrupted_delivery = True
         if job["status"] not in TERMINAL:
             for item in job["files"]:
                 if item["status"] in {"queued", "processing"}:
                     item.update(status="failure", error="Processing was interrupted. Upload this file again.")
             finish_job(job)
-        elif interrupted_delivery:
-            save_job(job)
     yield
 
 
@@ -110,6 +101,7 @@ def public_job(job: dict) -> dict:
         if item["status"] == "success":
             visible["downloads"] = {kind: f"{base}/download/{kind}" for kind in item["artifacts"]}
             visible["preview_url"] = f"{base}/preview"
+            visible["broker_delivery"] = broker_client.read_delivery(RUNTIME / job["job_id"] / "files" / item["file_id"] / "broker_delivery.json")
         result["files"].append(visible)
     return result
 
@@ -135,8 +127,6 @@ def process_job(job_id: str) -> None:
             root = RUNTIME / job_id
             try:
                 result = pipeline.process_file(root / item["input_path"], root / "files" / item["file_id"] / "output")
-                if os.environ.get("BROKER_URL") and str(result["hospital_id"]) != os.environ["HOSPITAL_ID"].removeprefix("hospital"):
-                    raise ValueError("CSV hospital identity does not match this hospital configuration")
                 report = json.loads(Path(result["report_file"]).read_text(encoding="utf-8"))
                 item.update(status="success", hospital_id=result["hospital_id"],
                             input_rows=result["input_rows"], cleaned_rows=result["cleaned_visit_rows"],
@@ -151,7 +141,6 @@ def process_job(job_id: str) -> None:
                     "token_report": str(Path(result["token_report_file"]).relative_to(root)),
                     "cleaning_report": str(Path(result["report_file"]).relative_to(root)),
                 }
-                deliver(job, item)
             except ValueError as exc:
                 message = str(exc).replace(str(root), "job folder")
                 item.update(status="failure", error=message[:800])
@@ -159,44 +148,6 @@ def process_job(job_id: str) -> None:
                 item.update(status="failure", error="This file could not be processed. Check its format and retry.")
             save_job(job)
         finish_job(job)
-
-
-def deliver(job: dict, item: dict) -> None:
-    if not os.environ.get("BROKER_URL"):
-        item["broker_status"] = "not_configured"
-        return
-    item["broker_status"] = "sending"
-    item.pop("broker_error", None)
-    save_job(job)
-    try:
-        receipt = broker_client.submit(RUNTIME / job["job_id"] / item["artifacts"]["tokens"],
-                                       item["filename"], job["job_id"], item["file_id"])
-        item.update(broker_status="received", broker_receipt=receipt)
-    except Exception:
-        # Preserve successful local artifacts; never expose response bodies or TLS file paths.
-        item.update(broker_status="failed", broker_error="Broker delivery failed. Check certificates, broker address and connectivity, then retry sending.")
-
-
-RETRY_LOCK = threading.Lock()
-
-
-def retry_delivery(job_id: str, file_id: str):
-    # Serialise read/modify/write of saved manifests during delivery retries.
-    with RETRY_LOCK:
-        job, item = find_item(job_id, file_id)
-        if job["status"] not in TERMINAL or item["status"] != "success":
-            raise HTTPException(409, "Wait for local processing to finish")
-        if not os.environ.get("BROKER_URL"):
-            raise HTTPException(409, "Broker delivery is not configured")
-        if item.get("broker_status") != "received":
-            deliver(job, item)
-            save_job(job)
-        return public_job(job)
-
-
-@app.post("/api/jobs/{job_id}/files/{file_id}/send")
-def send_to_broker(job_id: str, file_id: str):
-    return retry_delivery(job_id, file_id)
 
 
 @app.get("/api/health")
@@ -301,3 +252,18 @@ def download_all(job_id: str):
             temporary.unlink(missing_ok=True)
     return FileResponse(archive_path, media_type="application/zip",
                         filename=f"tokens_{job_id[:8]}.zip")
+
+
+@app.post("/api/jobs/{job_id}/files/{file_id}/broker-submission")
+def send_to_broker(job_id: str, file_id: str):
+    job, item = find_item(job_id, file_id)
+    path = artifact_path(job, item, "tokens")
+    delivery_path = RUNTIME / job_id / "files" / file_id / "broker_delivery.json"
+    return broker_client.queue_send(path, delivery_path, item["hospital_id"], item["filename"])
+
+
+@app.get("/api/jobs/{job_id}/files/{file_id}/broker-results")
+def broker_results(job_id: str, file_id: str, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)):
+    job, item = find_item(job_id, file_id)
+    artifact_path(job, item, "tokens")
+    return broker_client.results(RUNTIME / job_id / "files" / file_id / "broker_delivery.json", item["hospital_id"], offset, limit)

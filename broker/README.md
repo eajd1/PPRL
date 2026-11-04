@@ -1,311 +1,253 @@
-# Four-laptop secure PPRL demonstration
+# PostgreSQL broker and dashboard
 
-Each hospital runs the existing application locally. Only its backend connects to
-the broker. The browser uploads to `http://localhost:8080`; it never holds client
-keys or HMAC secrets. Cleaning, canonicalisation and the existing HMAC-SHA-256
-implementation are unchanged.
+The broker receives individual protected JSON token records from hospital backends and matches each completed submission. It stores stable global patient IDs, hospital/local-ID mappings, token history, receipt times and review evidence. This release is for local synthetic-data demonstrations.
 
-## Architecture
+This is the single broker guide. Run the commands below from the repository root. `broker/` contains the TLS proxy configuration,
+`backend/src/broker/` contains the PostgreSQL matching API, and `broker-dashboard/`
+contains the React frontend.
+
+Hospital submissions use one JSON token record per HTTPS request over mTLS. No CSV is transferred by the hospital client. Broker acknowledgements, status and matching results are JSON. Raw patient CSVs, token CSV artifacts and intermediate files remain at the hospital.
+
+## Start the application
+
+The original React `broker-dashboard`, PostgreSQL persistence, matching, reviews
+and global patient IDs remain intact. Security practices from the security branch
+are applied to this implementation; the branch's record-only receiver and UI are
+not deployed.
 
 ```text
-Hospital browser -> local hospital API -> cleaning -> combinations -> HMAC
-    -> HTTPS, TLS 1.3, hospital client certificate -> broker Nginx :8443
-    -> private Unix socket -> broker FastAPI -> record storage -> acknowledgement
-Operator browser -> HTTPS :9443 + operator login -> record dashboard
+Hospital -> JSON token records over HTTPS/TLS 1.3 + client certificate + service credential
+  -> Nginx :8443 -> private Unix socket -> original API -> PostgreSQL matching
+Operator -> HTTPS :9443 -> original React dashboard + administrator token
 ```
 
-Nginx requires a CA-verified client certificate. FastAPI maps the SHA-256
-fingerprint of that verified certificate to an identity in `allowlist.json`.
-It rejects a body `hospital_id` that differs from that identity. Certificate CNs
-and incoming identity headers do not establish identity. Nginx overwrites the
-identity headers. The backend has **no TCP listener and no network interface**;
-only Nginx shares its Unix socket. Do not publish the API through another proxy
-or start it with a TCP listener: its proxy headers are trusted only on that socket.
+On a fresh checkout only, provision coordinated credentials and certificate bundles:
 
-The hospital processes CSVs locally and sends **one JSON record per HTTPS request**:
+```powershell
+python backend/scripts/setup_demo.py
+python scripts/generate_certificates.py --broker-host broker-proxy --broker-host localhost --broker-host 127.0.0.1
+```
+
+Both scripts refuse to overwrite existing credentials. Preserve the existing
+HMAC key, database credentials, administrator token and PostgreSQL volume.
+
+```powershell
+certutil -user -addstore Root certs/unified/ca/ca.crt
+docker compose up --build -d
+```
+
+Hospital UI: http://localhost:8082. Dashboard: https://localhost:9443. Paste the
+`BROKER_ADMIN_TOKEN` value from `.env.admin` into the original dashboard form.
+No additional HTTP Basic/operator login is used.
+
+Nginx requires a CA-verified hospital client certificate and overwrites proxy
+identity headers. FastAPI uses the SHA-256 fingerprint allowlist, not the CN, to
+identify the hospital. That identity must match both the existing service
+credential and the JSON `hospitalID`. Missing certificates, unlisted fingerprints
+and mismatched identities fail closed. Administrator routes are only proxied by
+the HTTPS dashboard listener and still require its administrator token.
+
+The broker listens only on `/run/pprl/broker.sock`; no API TCP port is published.
+Only Nginx and the broker mount the socket volume. The broker retains network
+access to PostgreSQL on an internal Docker network. PostgreSQL has no host port.
+Matching and result APIs are retained. The hospital uses the record endpoint described below; the older CSV endpoint remains available for compatibility with existing tools.
+
+Certificate private keys and CA bundles are mounted read-only. The CA signing
+key stays on the provisioning machine and is never mounted in a container.
+The local demo mounts all three hospital bundles. Separate hospitals should
+receive only their own bundle and service credential.
+
+For a separate hospital, set numeric `HOSPITAL_ID`, `HOSPITAL_TLS_DIR` and
+`PPRL_BROKER_URL=https://BROKER_HOST:8443`, then run:
+
+```powershell
+docker compose -f compose.yaml -f compose.hospital.yaml up --build -d backend frontend
+```
+
+For a broker-only host:
+
+```powershell
+docker compose -f compose.yaml -f compose.broker.yaml up --build -d postgres broker broker-proxy
+```
+
+For LAN/internet access, issue the broker certificate with `--broker-host` for its
+actual IP or DNS name. Set `BROKER_BIND_IP=0.0.0.0` to accept hospital connections.
+Keep the dashboard local by default, or explicitly set `DASHBOARD_BIND_IP` to the
+required interface for HTTPS administrator access. Keep PostgreSQL and the API
+unpublished. Use valid matching certificate names and firewall access appropriate
+to the intended hospital clients. Never bypass CA or hostname verification.
+
+Read-only live checks:
+
+```powershell
+python scripts/check_secure_broker.py
+```
+
+## Record-wise hospital transport
+
+The hospital reads its generated token CSV locally and sends one request per token:
+
+```http
+POST /api/v1/submissions/records
+Content-Type: application/json
+```
 
 ```json
 {"hospitalID":"hospital1","patientID":"000123","token":"<64-character HMAC token>"}
 ```
 
-No CSV is transferred between hospital and broker. `hospitalID` must match the
-verified client certificate. `patientID` preserves the local patient ID, including
-leading zeroes. Every patient produces 20 records, one per combination. Blank
-combinations are included with `"token":""`; they are never skipped or hashed
-into a shared missing-value token. Nonblank HMAC values remain unchanged.
+All existing 25 token positions are preserved, including blanks as `"token":""`.
+Patient IDs remain strings, including leading zeroes. No token values are rehashed.
+The service credential and mTLS certificate must identify the same hospital as
+`hospitalID`. The shared HMAC key never leaves the hospital.
 
-Submission ID, original filename, scheme version, key ID, token position, record
-index and expected count travel as HTTP headers for validation and safe retries.
-Raw identifiers, combinations, reports and HMAC secrets stay at the hospital.
-Keep original filenames free of patient information.
+`Idempotency-Key`, `X-Submission-Digest`, `X-Original-Filename`, `X-Token-Version`,
+`X-Key-ID`, `X-Method`, `X-Record-Index` (zero-based), `X-Token-Index` (1?25) and
+`X-Token-Count` carry batch identity and metadata. Expected count is patients ? 25.
+Each acknowledgement includes the existing submission ID plus received/expected
+record counts. Filenames should contain no patient information.
 
-The operator dashboard shows received hospital IDs, patient IDs and full token
-values, with Hospital 1/2/3 filtering and pagination. It refreshes every three
-seconds and includes records from partially delivered submissions. Matching is
-not implemented. Broker storage remains local CSV files; transport is JSON.
+PostgreSQL durably stages each record. Identical retries are idempotent; changed
+content or metadata under the same identifier returns 409. Partial transfers
+survive restarts and remain `receiving`, excluded from matching. After all records
+arrive, the broker checks the complete digest and existing token validation,
+assembles the original matching payload, and queues the unchanged matching worker.
+A failed matching run can be requeued with the same identifier.
 
-## Prerequisites and LAN addresses
+The hospital schedules delivery in the background so slow networks do not hold
+open the browser request. Existing send/retry buttons and result polling continue
+to work without frontend changes. A retry resends the same indexed records;
+previously stored records are acknowledged without duplication.
 
-Install Docker Desktop with Linux containers on all four Windows laptops. Use
-the same checkout/version on the three hospitals. The provisioning laptop also
-needs Python 3 and OpenSSL 3 (`python --version`, `openssl version`). For example,
-use OpenSSL included with Git for Windows and add its `usr\bin` directory to PATH.
-The generator supplies its own OpenSSL configuration file.
+The `0002_record_transport` migration adds only transport staging tables and keeps
+existing submissions, patient IDs, matching history and database data intact.
 
-Connect all laptops to the same private LAN. Disable Wi-Fi client/AP isolation;
-guest Wi-Fi often prevents laptop-to-laptop access. On the broker run `ipconfig`
-and reserve its IPv4 address in DHCP. The examples below use **192.168.1.50**;
-replace it everywhere with the actual broker address. `localhost` always means
-the laptop you are currently using, never the remote broker.
+## Verification
 
-Using a LAN IP directly is simplest. If using `broker.pprl.test`, configure local
-DNS, or add `192.168.1.50 broker.pprl.test` to each Windows hosts file
-(`C:\Windows\System32\drivers\etc\hosts`, edited as Administrator). Containers
-do not necessarily inherit the Windows hosts file: add
-`extra_hosts: ["broker.pprl.test:192.168.1.50"]` under the hospital `backend`
-service in a local Compose override, or use LAN DNS. The certificate SAN must
-contain the exact IP/hostname used in `BROKER_URL`.
+All 54 tests passed inside Docker against a disposable PostgreSQL database,
+including partial-transfer persistence across restarts, unchanged token replay,
+metadata conflicts, invalid hospital identities, numeric patient-ID rejection,
+blank-token preservation, digest verification and matching only when complete.
+The test database was removed afterward.
 
-## Generate and distribute credentials
+A live hospital upload delivered 50 individual JSON requests over mTLS for two
+patients, completed PostgreSQL matching and returned global patient IDs. Retrying
+reused the same submission. The original React dashboard and administrator-token
+API passed their live checks. Dashboard and hospital frontend source are unchanged.
 
-On a trusted provisioning laptop, from the repository root in PowerShell:
+## What changed
 
-```powershell
-python scripts/generate_certificates.py --broker-host 192.168.1.50 --broker-host broker.pprl.test --broker-host localhost --broker-host 127.0.0.1
-```
+| Area | Changes |
+|---|---|
+| `backend/src/broker` | FastAPI API, hospital/admin authentication, strict CSV validation, PostgreSQL persistence, queued processing, weighted scoring and patient grouping |
+| `backend/migrations` | Versioned Alembic migration with a frozen SQL schema |
+| `backend/Broker.Dockerfile` | Builds the React dashboard and runs it with the Python broker; no Node runtime, hospital data or HMAC configuration |
+| `broker-dashboard` | React/TypeScript/Vite dashboard using official shadcn/ui components, with patient details, version history, submissions and read-only reviews |
+| `backend/src/hospital/broker_client.py` | Server-to-server token submission, scoped result retrieval and persisted delivery state |
+| `backend/app/main.py` | Submission/result routes and delivery status in saved jobs |
+| `frontend` | Send/retry controls, paginated broker results and updated privacy copy |
+| Hospital token pipeline | Incomplete combinations are blank; scheme defaults to `v3`; original 20 rules are unchanged, with five private-healthcare rules appended as tokens 21–25 |
+| Dependencies | Hospital and broker share FastAPI/multipart versions; hospital adds HTTPX; broker adds SQLAlchemy, psycopg and Alembic. Corrected the unavailable dotenv pin to the tested version. |
+| `compose.yaml` | Separate broker and PostgreSQL 17 services, health checks and a persistent database volume |
 
-Enter a unique operator password of at least 12 characters. The dashboard login
-username is `operator`. The password is hashed using SHA-512 crypt for Nginx;
-it is not written in plaintext or passed as an OpenSSL command argument.
-The script refuses to overwrite a nonempty output directory. `--output` selects
-a fresh directory. Certificates last 90 days; the demonstration CA lasts a year.
+Existing `v2` exports must be regenerated. The broker accepts `v3` only; do not mix schemes or silently reinterpret existing exports. The hospital's pre-existing majority/tie consolidation behaviour remains unchanged.
 
-Generated layout:
+The submission CSV has exactly 30 columns: `site_id,local_patient_id,token_version,key_id,method,token1,...,token25`. The three metadata fields identify the hashing scheme, key label (never the secret) and algorithm. Exports missing metadata or containing only 20 tokens must be regenerated by uploading and processing the original hospital CSV again. Do not edit existing token headers to upgrade a file.
 
-```text
-certs/ca/         ca.key, ca.crt (keep offline; never distribute ca.key)
-certs/broker/     broker.key, broker.crt, ca.crt, allowlist.json, operator.htpasswd
-certs/hospital1/  client.key, client.crt, ca.crt
-certs/hospital2/  client.key, client.crt, ca.crt
-certs/hospital3/  client.key, client.crt, ca.crt
-```
+After updating the code, run `docker compose up --build -d backend frontend broker`. This preserves the named volumes. Existing stored 20-token snapshots remain valid for their original positions; old validated queued submissions can finish with blank private-healthcare positions. New submissions require all 25 token columns. No database migration or global-ID reset is required.
 
-Transfer each bundle securely to its intended laptop only. Each hospital must
-receive only its own client bundle. The broker gets only the broker bundle;
-it must not receive hospital HMAC secrets, client private keys, or the CA key.
-Restrict Windows file ACLs on private keys to the deployment account and Docker.
-The hospital container runs as UID 10001; on Linux hosts set ownership/read access
-for that UID explicitly (do not make private keys world-readable). Windows Docker
-Desktop bind mounts use Windows permissions. Keys are mounted read-only and
-excluded from Git and Docker build contexts. Keep backups and received CSV files
-under appropriate machine access controls; use BitLocker for disk protection.
+The token scheme stays `v3` because the first 20 combination definitions, order and hash inputs are unchanged. The scoring version advances to `grouped-24-v2` to identify decisions that include private-healthcare evidence. Earlier assessments remain historical and are not rescored automatically.
 
-To revoke a hospital certificate, remove its fingerprint from the broker
-allowlist and restart `broker-api`. To rotate certificates, generate a fresh
-credential set, distribute the appropriate new bundles, replace the allowlist,
-and restart services. Do not overwrite a live CA casually: changing the CA
-requires distributing the new trust certificate to all participants.
+## Matching behaviour
 
-## Laptop 4: broker
+| Token group | Weights in token order | Maximum |
+|---|---|---:|
+| 1–4 | 4, 2, 4, 4 | 4 |
+| 5–7 and 21–23 | 5, 2, 5 and 5, 2, 5 | 5 |
+| 8–11 | 3, 3, 3, 1 | 3 |
+| 12–14 | 4, 3, 4 | 4 |
+| 15–18 | 2, 1, 2, 2 | 2 |
+| 19–20 and 24–25 | 6, 6 and 6, 6 | 6 |
 
-Copy only its credential bundle to `certs/broker/`. Never copy a hospital `.env`
-to this machine. The broker Compose file does not load the hospital `.env` into
-its API. Configure deployment variables separately:
+Each group contributes only its strongest matching rule. Scores range from 0 to 24. Blank tokens never match. Compatibility requires equal token scheme, key ID and method. Score 12 or higher from at least two groups proposes a match; 6–11 requires review. These provisional scores are not probabilities, and different groups still share underlying identifiers.
 
-```powershell
-if (-not (Test-Path .env.broker)) { Copy-Item broker/.env.example .env.broker }
-docker compose --env-file .env.broker -f compose.broker.yaml up -d --build
-```
+A new hospital record joins a global patient only if it meets the threshold against every existing member. Multiple plausible groups, inconsistent evidence or a second local ID from one hospital are held for review. Below-review evidence creates a separate global patient. An all-blank record gets a global ID marked insufficient evidence. Existing global patients are never merged automatically.
 
-Only port **8443** is exposed to the LAN. Port **9443** binds to loopback by
-default so the operator dashboard is local to Laptop 4. No HTTP port or FastAPI
-port is published. Received data is bind-mounted to `broker/data/` inside the
-project directory. Only the private Unix socket uses a named Docker volume.
-No database is used. On Linux hosts, create `broker/data/` and give UID 10001
-write access before starting; Windows Docker Desktop uses Windows file permissions.
+An already linked hospital/local ID retains its global ID. Consistent updates become the matching version. Conflicting updates are saved and flagged while the prior consistent version remains active for matching. Reassessment supersedes the prior review case but does not imply a human approval. No manual resolution controls are provided.
 
-In elevated PowerShell, permit the submission port on the private local subnet:
+Times are stored as UTC and shown in the browser's timezone. Latest receipt and latest content change are separate. A retry does not refresh receipt time; a new submission does. Receipt time is not a clinical update date. Hospital result pages show the immutable result of that submission; the broker patient screen shows the current membership state.
 
-```powershell
-New-NetFirewallRule -DisplayName 'PPRL broker mTLS' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8443 -Profile Private -RemoteAddress LocalSubnet
-```
+## APIs and isolation
 
-Open **https://localhost:9443** on Laptop 4 and sign in as `operator`. Import the
-public `certs/broker/ca.crt` into the operator account's **Trusted Root
-Certification Authorities** store (never import `ca.key`). For example:
+Hospital endpoints require a bearer service credential and an approved mTLS certificate. Record transport uses JSON and the headers documented above. The compatibility CSV endpoint uses multipart field `file` and `Idempotency-Key`. Duplicate identifiers with different bytes return 409. Replayed requests return the original submission. A failed matching transaction can be requeued by resending the same file and identifier.
+
+- `POST /api/v1/submissions/records` (hospital JSON transport)
+- `POST /api/v1/submissions` (compatibility CSV API)
+- `GET /api/v1/submissions/{id}`
+- `GET /api/v1/submissions/{id}/results?offset=0&limit=20`
+
+Administrator-only endpoints include `/api/v1/admin/overview`, `/patients`, `/patients/{id}`, `/records/{id}/versions`, `/submissions`, `/submissions/{id}`, `/reviews` and `/reviews/{id}`. Lists are paginated. Patients can be searched by global or local patient ID. Submissions support status filtering. Tokens are never returned in dashboard responses; review evidence contains rule positions and scores.
+
+Hospital routes are `/api/jobs/{job}/files/{file}/broker-submission` and `/broker-results`. Hospital A cannot retrieve hospital B's submissions through the broker API. The existing hospital application has no human-user authentication and its demo configuration can hold all three service credentials; this is not a production hospital isolation boundary.
+
+The broker validates declared format and compatibility; it cannot prove that a hospital generated a token correctly. Full OIDC, remote HTTPS deployment, clinical-record requests, model training and human match resolution are outside this release.
+
+## Queue, database and recovery
+
+Validated input is durably staged in PostgreSQL before the API returns 202. One in-process worker claims work under a PostgreSQL advisory transaction lock. Each submission's patient records are processed in stable local-ID order. Memberships, versions, assessments, audit events and results commit together. On process termination, the transaction rolls back and the queued submission is recoverable. A caught processing failure rolls back partial changes and marks the submission failed for an explicit retry.
+
+PostgreSQL is not published on a host port. The application uses SQLAlchemy/psycopg and Alembic; migration runs before Uvicorn starts. The first migration's SQL is independent of future ORM changes. `docker compose down` preserves named volumes. Do not add `--volumes` unless intentionally deleting stored demonstration data.
+
+For a backup, avoid piping binary dumps through Windows PowerShell. Create the dump inside the database container and copy it out:
 
 ```powershell
-Import-Certificate -FilePath certs/broker/ca.crt -CertStoreLocation Cert:\CurrentUser\Root
+docker compose exec -T postgres pg_dump -U pprl -d pprl -Fc -f /tmp/pprl.dump
+docker compose cp postgres:/tmp/pprl.dump ./pprl.dump
 ```
 
-Restart the browser after importing the CA. Do not bypass certificate warnings.
-Hospital Python clients use the explicitly configured CA file, not the Windows
-browser trust store. They verify broker hostname and validity as well as trust.
-
-For a remote operator, set `DASHBOARD_BIND_IP` to the broker LAN IP, permit 9443
-only from that operator's address, use a certificate SAN covering that address
-or hostname, and import the CA on the operator laptop. Login is still mandatory.
-This is a small LAN prototype; do not expose either endpoint to the Internet.
-
-## Laptops 1, 2 and 3: hospitals
-
-On **each** laptop copy `.env.example` to `.env` if needed. Preserve an existing
-`.env` rather than overwriting an already provisioned HMAC key. Securely provision
-the same random 32-byte-or-longer HMAC key, key ID and scheme version to all three
-hospitals. Generate a key once on a trusted hospital provisioning machine with:
+Restore into a **new** database for verification:
 
 ```powershell
-python -c "import secrets; print(secrets.token_hex(32))"
+docker compose cp ./pprl.dump postgres:/tmp/pprl-restore.dump
+docker compose exec -T postgres createdb -U pprl pprl_restore
+docker compose exec -T postgres pg_restore -U pprl -d pprl_restore --no-owner /tmp/pprl-restore.dump
 ```
 
-Transfer it securely to the hospitals, never to the broker. Set these entries in
-each hospital `.env` (replace the placeholder and broker address):
+Backups contain sensitive linkage information. Keep them out of Git and retain access controls.
 
-```dotenv
-PPRL_TOKEN_KEY=<same securely provisioned hex key on all hospitals>
-PPRL_KEY_ID=pprl-linkage-2026-01
-PPRL_TOKEN_VERSION=v2
-HOSPITAL_ID=hospital1
-BROKER_URL=https://192.168.1.50:8443
-HOSPITAL_TLS_DIR=./certs/hospital1
-```
+## Verification
 
-| Laptop | HOSPITAL_ID | HOSPITAL_TLS_DIR  | Upload example |
-| ------ | ----------- | ----------------- | -------------- |
-|   1    |  hospital1  | ./certs/hospital1 |  hospital1.csv |
-|   2    |  hospital2  | ./certs/hospital2 |  hospital2.csv |
-|   3    |  hospital3  | ./certs/hospital3 |  hospital3.csv |
-
-Ensure the CSV's hospital ID agrees with that laptop. Existing inference from
-`hospital1.csv`, etc. still works. A deployment configured as hospital1 cannot
-process a hospital2 dataset for delivery. Original filenames are preserved.
-Files with explicit `hospital_id` can use other simple `.csv` filenames.
-
-On all three hospital laptops:
+Install the hospital and broker requirements plus pytest into a Python 3.12 virtual environment. Run from the project root:
 
 ```powershell
-Test-NetConnection 192.168.1.50 -Port 8443
-docker compose -f compose.yaml -f compose.hospital.yaml up -d --build
+$env:PYTHONPATH = "$PWD/backend"
+$env:BROKER_TEST_DATABASE_URL = "postgresql+psycopg://USER:PASSWORD@localhost:5432/pprl_test"
+python -m pytest backend/tests backend/src/hospital/test_token_generator.py -q
 ```
 
-Open **http://localhost:8080**, upload that hospital's CSV and select **Send to
-broker**. Cleaning and HMAC generation run in the background. The card shows
-**Received by broker** only after the broker returns an acknowledgement. Check
-the dashboard on Laptop 4 for the real filename and originating hospital.
-Hospital UI/API port 8080 remains loopback-only and needs no LAN firewall rule.
+The integration fixture requires a disposable database whose name starts with `pprl_test`. It migrates and clears that database between tests. Without a test database URL, integration tests are explicitly skipped. Never point it at a retained database.
 
-Without `compose.hospital.yaml` and without `BROKER_URL`, the original local
-preparation mode still works and reports that no files were sent.
-
-## Failure and duplicate behaviour
-
-Transport errors are retried up to three times using the same submission UUID
-(derived from hospital identity, job UUID and file ID). An identical retry returns
-the existing receipt; reused IDs with different content or hospital identity are
-rejected with HTTP 409. Each token has a stable index within its original file submission. The single-worker
-broker appends the record to its hospital CSV before acknowledging it. A retry of an
-already saved index returns the existing result; different content at that index
-is rejected. The receipt stays `receiving` until every expected token is saved.
-Keep exactly one broker worker/process; the duplicate lock is in-process.
-Separate new uploads create separate submissions, even with identical filenames.
-
-TLS verification errors fail closed; no plaintext fallback or redirects are
-followed. Successful local preparation is preserved if delivery fails. Select
-**Retry sending** to resend the saved tokens, without re-uploading or regenerating
-them. A fresh page retrieves the saved receipt/status. An interrupted process
-may require retry after restart; retrying the same UUID is safe if the broker had
-already committed. Cleaning failures still appear separately from delivery failures.
-
-## API and storage
-
-| Endpoint | Access | Result |
-| --- | --- | --- |
-| POST :8443/api/submissions | CA-verified, allowlisted hospital certificate | 201 new token; 200 identical token retry |
-| GET :8443/api/health | CA-verified, allowlisted hospital certificate | Broker health |
-| GET :9443/api/submissions | Operator HTTPS Basic authentication | Latest 500 submission receipts |
-| GET :9443/api/records | Operator HTTPS Basic authentication | Paginated records; optional hospital_id, offset and limit |
-| GET :9443/api/health | Operator authentication | Broker health |
-| GET :9443/ | Operator authentication | Auto-refreshing dashboard |
-
-The hospital sends one `application/json` object per record, containing exactly
-`hospitalID`, `patientID` and `token`. CSV requests and multi-record requests are
-rejected. API acknowledgements and dashboard responses are JSON. Local broker
-storage uses CSV; there is no database.
-
-Project-directory file layout:
-
-```text
-backend/runtime/<job-id>/files/<file-id>/
-    input/<original-filename>.csv
-    output/cleaned/<stem>_cleaned.csv
-    output/combinations/<stem>_combinations.csv
-    output/tokens/<stem>_tokens.csv
-broker/data/received/
-    hospital1.csv
-    hospital2.csv
-    hospital3.csv
-```
-
-Each hospital CSV contains all its received records, including hospital ID,
-patient ID, token, submission metadata and stable record/combination indexes.
-Files are created when a hospital first sends data. New records are appended and
-flushed to disk before acknowledgement. Receipts and sorted dashboard records
-are indexed in memory and rebuilt from these CSVs on startup, so refreshing the
-dashboard does not read thousands of individual files.
-
-Existing per-record files are automatically merged on startup. After the merged
-CSVs are committed, the old submission directories are moved to
-`broker/data/legacy-records/` as a backup; they are no longer used by the broker.
-Restarting migration does not duplicate records.
-
-If delivery is interrupted, saved tokens remain. Retry resends the same indexed
-tokens, acknowledges identical ones without duplication, and fills in the missing
-ones. Receipts are reconstructed from hospital CSV rows after restart. Changed metadata or token content for an existing index is rejected.
-Extra JSON fields, multiple records in a single request, malformed nonblank tokens and
-hospital identities that differ from the verified certificate are rejected.
-
-The hospital retains its existing patient-linkage CSV and local diagnostic
-reports/job manifests in their existing formats. Broker processing beyond
-receipt/storage is TODO; no matching is performed.
-
-Both data directories are excluded from Git and Docker image contents. They
-survive container removal because they live inside the project directory.
-Deleting these host folders deletes the saved files. Broker processing beyond
-receipt/storage is **TODO**.
-
-## Automated checks
-
-From the root on a development machine with Python, OpenSSL and Docker Desktop:
+Dashboard build:
 
 ```powershell
-python scripts/test_secure_broker.py
+cd broker-dashboard
+npm ci
+npm run build
 ```
 
-Docker Compose **2.24.4+** is required for the test-only `!override` port removal.
-The script creates ignored, disposable test credentials with a known test-only
-operator password, builds an isolated `pprl-security-test` stack, runs tests,
-and removes only that stack and its test volumes. It does not use or delete the
-production CSV folders or volumes. Never use `.test-credentials` for deployment.
+Browser tests use an installed Chrome and running local services. Set `BROKER_UI_URL` and `HOSPITAL_UI_URL` (defaults are temporary test ports 18081/18080), use an empty broker database, and run `npx playwright test` from `broker-dashboard`. The credential is read from `BROKER_UI_TOKEN` or the local `.env.admin`. Tests upload synthetic data, send tokens, inspect patient history/reviews, verify filtering, mobile layout and credential loss on reload.
 
-Checks cover three independent production hospital containers, actual CSV processing and transmission,
-unchanged tokens in received CSV files, local patient ID preservation and exclusion of other raw identifiers, strict schema,
-real records rendered by the dashboard JavaScript, duplicate/conflict handling,
-operator authentication, forged headers/body identity, no client certificate,
-untrusted and CA-signed-but-unlisted client certificates, wrong broker trust and hostname, and TLS 1.2
-rejection through the actual production Nginx configuration. The dashboard DOM
-test executes its renderer in Node; it is not a full browser visual test.
+For synthetic evaluation, create a separate empty database named `pprl_eval*`, set `BROKER_EVAL_DATABASE_URL` and run `python backend/scripts/evaluate_demo.py`. It verifies positional row counts, consistent identity mappings, per-hospital uniqueness and the supplied generator's modulo mapping before evaluating. Reports and regenerated v3 artifacts go under `backend/runtime/evaluation`.
 
-Run existing HMAC tests separately with the project virtual environment:
+The supplied dataset evaluation produced 182 hospital patient records, 27 pending reviews, 11 true-positive pairs, zero false-positive pairs and 91 false-negative pairs: **100% precision on 11 predicted pairs and 10.78% recall**. The review rate was **14.84%**. This small synthetic result demonstrates conservative behaviour, not validated clinical performance. Thresholds were left unchanged.
 
-```powershell
-.venv\Scripts\python.exe -m unittest discover -s backend/src/hospital -p test_*.py -v
-```
 
-The container tests exercise real sockets and TLS, but cannot establish physical
-four-laptop connectivity. On the actual laptops verify LAN routing/AP isolation,
-Windows firewall behaviour, Docker file permissions, hostname resolution,
-browser CA trust, receipt display from all three independent deployments, and
-rejection when a hospital client bundle is removed or replaced.
+## Verification performed during implementation
 
-TLS configuration follows the official [Nginx SSL module documentation](https://nginx.org/en/docs/http/ngx_http_ssl_module.html)
-and Python's [SSLContext documentation](https://docs.python.org/3.12/library/ssl.html).
+- 33 Python tests passed under Python 3.12 with the pinned application requirements, using an isolated PostgreSQL 18 cluster available on the development machine.
+- 2 headless Chrome tests passed against live hospital and broker services, including three hospital uploads and submissions, dashboard evidence inspection, reload sign-out, filtering and mobile layout.
+- Production TypeScript/Vite build passed; rendered desktop and mobile screens were inspected.
+- Alembic schema matched the application models; PostgreSQL dump/restore preserved all table counts.
+- Docker Compose configuration passed validation. Docker Desktop could not start its engine, so container image builds, PostgreSQL 17 execution and Docker volume recreation remain unverified on this machine.
+
+The Docker deployment explicitly selects PostgreSQL 17. Re-run the integration suite against PostgreSQL 17 and the Compose smoke workflow when Docker is available. The local PostgreSQL 18 tests are not a substitute for that final deployment check.

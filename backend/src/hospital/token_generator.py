@@ -15,8 +15,8 @@ Input  (one file per hospital, made by combining.py):
 Output (sent to the broker):
     site_id, local_patient_id, token_version, key_id, method, <token 1>, <token 2>, ...
 
-Each token column has the same name as the combination it came from.
-A blank combination (a field was missing) stays blank, and is delivered as an empty token value.
+Output columns token1 through token25 follow the fixed combination order.
+A blank combination (a field was missing) stays blank, so the broker skips it.
 local_patient_id is copied unchanged and is never hashed: it is a local label
 each hospital uses to find its own patient when results come back.
 
@@ -68,7 +68,7 @@ MIN_KEY_BYTES = 32
 
 # Bump this if the hashing input format changes, so old and new tokens
 # can never match by accident.
-TOKEN_SCHEME_VERSION = os.environ.get("PPRL_TOKEN_VERSION", "v2")
+TOKEN_SCHEME_VERSION = os.environ.get("PPRL_TOKEN_VERSION", "v3")
 TOKEN_KEY_ID = os.environ.get("PPRL_KEY_ID", "")
 
 # Separates the version, combination name and value before hashing.
@@ -233,16 +233,13 @@ def tokenise_file(
     produced = {name: 0 for name in combination_columns}
     with token_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle, lineterminator="\n")
-        # writer.writerow(["site_id", "local_patient_id", "token_version", "key_id", "method", *combination_columns])
-        token_columns = [f"token{i}"for i in range(1, len(combination_columns) + 1)]
-
-        writer.writerow(["site_id", "local_patient_id", "token_version","key_id", "method", *token_columns])
+        token_columns = [f"token{i}" for i in range(1, len(combination_columns) + 1)]
+        writer.writerow(["site_id", "local_patient_id", "token_version", "key_id", "method", *token_columns])
         for row in rows:
             tokens = [make_token(name, row[name], method, key) for name in combination_columns]
             for name, token in zip(combination_columns, tokens):
                 produced[name] += int(bool(token))
             writer.writerow([site_id, row["local_patient_id"], TOKEN_SCHEME_VERSION, key_id, method, *tokens])
-
     report = {
         "source_file": input_path.name,
         "token_file": str(token_path),

@@ -53,6 +53,7 @@ REQUIRED_COLUMNS = [
     "postcode",
     "phone",
     "fake_medicare_id",
+    "private_healthcare",
     "middle_name",
     "email",
     "hospital_id",
@@ -83,6 +84,7 @@ LINKAGE_COLUMNS = [
     "postcode",
     "phone",
     "fake_medicare_id",
+    "private_healthcare",
 ]
 
 SEX_MAP = {
@@ -464,6 +466,19 @@ def clean_fake_medicare_id(
     value: str,
 ) -> tuple[str, bool]:
     """Clean a Medicare card number and check for exactly 10 ASCII digits."""
+    raw = value.strip()
+    if not raw:
+        return "", False
+    cleaned = re.sub(r"[\s/-]", "", raw)
+    if len(cleaned) != 10 or not cleaned.isascii() or not cleaned.isdigit():
+        return "", True
+    return cleaned, False
+
+
+def clean_private_healthcare(
+    value: str,
+) -> tuple[str, bool]:
+    """Clean a private healthcare ID and check for exactly 10 ASCII digits."""
     raw = value.strip()
     if not raw:
         return "", False
@@ -926,6 +941,9 @@ def clean_dataframe(
         "phone": clean_phone,
         "fake_medicare_id": (
             clean_fake_medicare_id
+        ),
+        "private_healthcare": (
+            clean_private_healthcare
         ),
     }
 

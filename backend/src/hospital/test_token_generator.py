@@ -95,7 +95,7 @@ class ReadCombinationsTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
 
     def test_missing_id_column(self):
-        self.assert_rejected([row()], "local_patient_id", ["hospital_id", *COMBOS])
+        self.assert_rejected([row()], "local_patient_id", ["hospital_id", "token1", "token2"])
 
     def test_duplicate_patient(self):
         self.assert_rejected([row(), row()], "repeats row 2")
