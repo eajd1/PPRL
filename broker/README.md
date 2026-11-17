@@ -160,7 +160,7 @@ API passed their live checks. Dashboard and hospital frontend source are unchang
 | `backend/src/hospital/broker_client.py` | Server-to-server token submission, scoped result retrieval and persisted delivery state |
 | `backend/app/main.py` | Submission/result routes and delivery status in saved jobs |
 | `frontend` | Send/retry controls, paginated broker results and updated privacy copy |
-| Hospital token pipeline | Incomplete combinations are blank; scheme defaults to `v3`; original 20 rules are unchanged, with five private-healthcare rules appended as tokens 21ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“25 |
+| Hospital token pipeline | Incomplete combinations are blank; scheme defaults to `v3`; original 20 rules are unchanged, with five private-healthcare rules appended as tokens 21ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“25 |
 | Dependencies | Hospital and broker share FastAPI/multipart versions; hospital adds HTTPX; broker adds SQLAlchemy, psycopg and Alembic. Corrected the unavailable dotenv pin to the tested version. |
 | `compose.yaml` | Separate broker and PostgreSQL 17 services, health checks and a persistent database volume |
 
@@ -189,7 +189,7 @@ Middle name and sex are no longer required by any token; their CSV columns may b
 | 14 | First name, last name, postcode | E | 1 |
 
 Use the strongest agreeing token in each group. Caps A/B/C/D/E are 8/5/5/5/1; maximum 24.
-Score 0Ã¢â‚¬â€œ5 is below threshold, 6Ã¢â‚¬â€œ11 is review, and 12Ã¢â‚¬â€œ24 is a pair match requiring two or more groups.
+Score 0ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ5 is below threshold, 6ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ11 is review, and 12ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ24 is a pair match requiring two or more groups.
 A single healthcare-ID group can never automatically link a pair. Scores are provisional evidence totals,
 not probabilities. Family Medicare/policy IDs and household phone numbers can be shared. Insurer issuer
 names are not available in this dataset; issuer-qualified private IDs require a future scheme change.
@@ -307,3 +307,25 @@ The supplied dataset evaluation produced 182 hospital patient records, 27 pendin
 - Docker Compose configuration passed validation. Docker Desktop could not start its engine, so container image builds, PostgreSQL 17 execution and Docker volume recreation remain unverified on this machine.
 
 The Docker deployment explicitly selects PostgreSQL 17. Re-run the integration suite against PostgreSQL 17 and the Compose smoke workflow when Docker is available. The local PostgreSQL 18 tests are not a substitute for that final deployment check.
+
+## Pair results CSV exports
+
+`evaluate_token_schemes.py --output ./evaluation.json` now also writes `./evaluation_pairs.csv`.
+Both schemes and all cohorts are in that one CSV, identified by `scheme` and `cohort` columns.
+The read-only `evaluate_demo.py` writes `backend/runtime/evaluation/evaluation_pairs.csv`
+alongside its existing JSON summary. JSON reports include the CSV path and pair row counts.
+
+Every cross-hospital pair is included; same-hospital pairs are excluded. Columns contain each side's
+hospital ID, local patient ID, ground-truth identity, global patient ID and record status, plus
+`ground_truth_match`, `predicted_match` and `outcome`. No patient names, contact details, tokens or secrets
+are exported. Local IDs are written unchanged; import them as text in spreadsheets to retain leading zeros.
+
+Filter `outcome=true_positive` for correctly linked pairs, `false_negative` for true patient pairs the
+broker missed or held for review, and `false_positive` for incorrect links. `true_negative` identifies
+correctly unlinked different patients. An unassigned pending-review record counts as unlinked and its status is visible. Established memberships
+remain linked even when an update awaits review; two blank global IDs never count as a match. `predicted_match` means actual shared global-ID
+membership, not just a candidate score. Historical membership evaluation is labelled `existing-memberships`.
+
+Pair output grows quadratically with record count, so rows are streamed to disk. The scheme comparison
+publishes its pair CSV only after both evaluations finish successfully. Generated pair files are evaluation
+artifacts and do not need committing to Git.

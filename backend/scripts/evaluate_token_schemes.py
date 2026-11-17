@@ -1,6 +1,6 @@
 """Compare frozen v3 and v4 in two EMPTY pprl_eval* databases; no production data is changed.
 
-Requires --v3-url, --v4-url and --output. The baseline stages frozen v3 payloads
+Requires --v3-url, --v4-url and --output. Writes JSON and a sibling <stem>_pairs.csv. The baseline stages frozen v3 payloads
 at the durable queue boundary; v4 exercises current CSV validation/API and the
 same matching worker. HTTPS transport is verified separately by live TLS tests.
 """
@@ -14,6 +14,7 @@ import json
 import os
 from pathlib import Path
 import random
+import shutil
 import sys
 import tempfile
 
@@ -31,6 +32,7 @@ from src.broker.worker import process_next
 from src.hospital import pipeline, combining, token_generator
 from evaluate_demo import verified_truth
 from legacy_v3 import COMBINATIONS as OLD_COMBINATIONS
+from pair_results import pair_rows, write_pair_results
 
 KEY=b"evaluation-only-key-not-for-real-data" * 2
 
@@ -89,7 +91,7 @@ def metrics(predictions,truth,reviews):
                 f1=2*tp/(2*tp+fp+fn) if 2*tp+fp+fn else None,review_rate=reviews/len(truth))
 
 
-def evaluate(url,scheme,cohorts):
+def evaluate(url,scheme,cohorts,pair_output=None):
     parsed=make_url(url)
     if parsed.drivername!="postgresql+psycopg" or not parsed.database.startswith("pprl_eval"):
         raise ValueError("Evaluation requires dedicated PostgreSQL pprl_eval* databases")
@@ -103,7 +105,7 @@ def evaluate(url,scheme,cohorts):
             if db.scalar(select(func.count()).select_from(Submission)):
                 raise ValueError("Evaluation database is not empty; refusing to reuse or clear it")
         for name,(data,truth) in cohorts.items():
-            predictions={};reviews=0
+            predictions={};reviews=0;statuses={}
             for site,cleaned in data.items():
                 rows=encode_rows(cleaned,scheme)
                 # Isolate cohorts so repeated synthetic identifiers cannot cross-link across seeds.
@@ -125,11 +127,15 @@ def evaluate(url,scheme,cohorts):
                     if body["status"]!="processed":raise RuntimeError("Evaluation submission did not process")
                     for item in body["items"]:
                         predictions[(site,item["local_patient_id"])]=item["global_patient_id"]
+                        statuses[(site,item["local_patient_id"])]=item["status"]
                         reviews+=item["status"]=="pending_review"
                     offset+=len(body["items"])
                     if offset>=body["total"]:break
             assert set(predictions)==set(truth)
             reports[name]=metrics(predictions,truth,reviews)
+            if pair_output is not None:
+                reports[name]["pair_rows"]=write_pair_results(pair_output, pair_rows(
+                    predictions,truth,scheme=scheme,cohort=name,statuses=statuses),include_header=False)
     return reports
 
 
@@ -148,8 +154,16 @@ def main():
             with clean.open(newline="",encoding="utf-8-sig") as source:data[str(report["hospital_id"])]=list(csv.DictReader(source))
         cohorts["verified_repository_dataset"]=(data,truth)
     for seed in (1729,2718,31415):cohorts[f"held_out_seed_{seed}_shared_family_ids"]=synthetic(seed)
-    results={scheme:evaluate(url,scheme,cohorts) for scheme,url in (("v3",args.v3_url),("v4",args.v4_url))}
-    report=dict(thresholds={"match":12,"review":6},results=results,
+    pair_path=args.output.with_name(args.output.stem+"_pairs.csv")
+    # Buffer on disk until both evaluations succeed, rather than publishing partial results.
+    with tempfile.TemporaryFile(mode="w+",newline="",encoding="utf-8") as pairs:
+        write_pair_results(pairs,())
+        results={scheme:evaluate(url,scheme,cohorts,pairs) for scheme,url in (("v3",args.v3_url),("v4",args.v4_url))}
+        args.output.parent.mkdir(parents=True,exist_ok=True)
+        pairs.seek(0)
+        with pair_path.open("w",newline="",encoding="utf-8") as destination:
+            shutil.copyfileobj(pairs,destination)
+    report=dict(pair_results_csv=str(pair_path),thresholds={"match":12,"review":6},results=results,
                 note="Provisional fixed weights; no tuning on these seeds. Shared family IDs, DOB and phone are deliberate stress cases. No clinical accuracy claim.",
                 dataset_sha256={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in [*files,ROOT/"backend/dataset/ground_truth.csv"]})
     args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(json.dumps(report,indent=2),encoding="utf-8")

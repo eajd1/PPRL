@@ -19,6 +19,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 from sqlalchemy import create_engine, select, tuple_
 from sqlalchemy.engine import make_url
 from src.broker.models import HospitalRecord, Membership
+from pair_results import pair_rows, write_pair_results
 
 
 def log_progress(message):
@@ -112,7 +113,7 @@ def load_existing_predictions(url, truth):
     missing_records = len(truth) - len(existing)
     unlinked_records = sum(patient_id is None for patient_id, _ in existing.values())
     reviews = sum(status == "pending_review" for _, status in existing.values())
-    return predictions, len(existing), missing_records, unlinked_records, reviews
+    return predictions, len(existing), missing_records, unlinked_records, reviews, {identity: status for identity, (_, status) in existing.items()}
 
 
 def main():
@@ -129,7 +130,7 @@ def main():
     log_progress(f"Verified {len(files)} hospital datasets and {len(truth)} records")
     output = root / "backend/runtime/evaluation"
     log_progress("Reading existing broker matches in a read-only transaction")
-    predictions, database_records, missing_records, unlinked_records, reviews = load_existing_predictions(url, truth)
+    predictions, database_records, missing_records, unlinked_records, reviews, statuses = load_existing_predictions(url, truth)
     log_progress(
         f"Found {database_records}/{len(truth)} dataset records; "
         f"{missing_records} missing, {unlinked_records} unlinked, {reviews} pending review"
@@ -157,6 +158,11 @@ def main():
               "dataset_sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in [*files, root / "backend/dataset/ground_truth.csv"]},
               "note": "Read-only evaluation of existing broker memberships against synthetic truth. Missing records and records without a membership count as unlinked; pending review is reported separately. Do not interpret scores as probabilities."}
     output.mkdir(parents=True, exist_ok=True)
+    pair_path = output / "evaluation_pairs.csv"
+    with pair_path.open("w",newline="",encoding="utf-8") as handle:
+        report["pair_results_rows"] = write_pair_results(handle,pair_rows(
+            predictions,truth,scheme="existing-memberships",cohort="verified_repository_dataset",statuses=statuses))
+    report["pair_results_csv"] = str(pair_path)
     report_path = output / "evaluation.json"
     log_progress(f"Writing report to {report_path}")
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
