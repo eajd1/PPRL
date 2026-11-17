@@ -1,0 +1,23 @@
+services:
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    env_file:
+      - .env.pgadmin
+    ports:
+      - "127.0.0.1:5050:80"
+    volumes:
+      - pgadmin-state:/var/lib/pgadmin
+    networks:
+      - broker-private
+      - pgadmin-web
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgadmin-state:
+
+networks:
+  pgadmin-web:
+    driver: bridge

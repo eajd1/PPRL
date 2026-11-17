@@ -52,6 +52,20 @@ Only Nginx and the broker mount the socket volume. The broker retains network
 access to PostgreSQL on an internal Docker network. PostgreSQL has no host port.
 Matching and result APIs are retained. The hospital uses the record endpoint described below; the older CSV endpoint remains available for compatibility with existing tools.
 
+For local pgAdmin access without publishing PostgreSQL, create a local,
+git-ignored `.env.pgadmin` file containing `PGADMIN_DEFAULT_EMAIL` and
+`PGADMIN_DEFAULT_PASSWORD`. Start the optional pgAdmin container on the private
+broker network:
+
+```powershell
+docker compose -f compose.yaml -f compose.pgadmin.yaml up -d pgadmin
+```
+
+Open http://localhost:5050 and sign in with the pgAdmin credentials in
+`.env.pgadmin`. Register a server using host `postgres`, port `5432`, database
+`pprl`, user `pprl`, and the password from `.env.postgres`. PostgreSQL remains
+accessible only from containers on the private broker network.
+
 Certificate private keys and CA bundles are mounted read-only. The CA signing
 key stays on the provisioning machine and is never mounted in a container.
 The local demo mounts all three hospital bundles. Separate hospitals should
@@ -237,7 +251,7 @@ npm run build
 
 Browser tests use an installed Chrome and running local services. Set `BROKER_UI_URL` and `HOSPITAL_UI_URL` (defaults are temporary test ports 18081/18080), use an empty broker database, and run `npx playwright test` from `broker-dashboard`. The credential is read from `BROKER_UI_TOKEN` or the local `.env.admin`. Tests upload synthetic data, send tokens, inspect patient history/reviews, verify filtering, mobile layout and credential loss on reload.
 
-For synthetic evaluation, create a separate empty database named `pprl_eval*`, set `BROKER_EVAL_DATABASE_URL` and run `python backend/scripts/evaluate_demo.py`. It verifies positional row counts, consistent identity mappings, per-hospital uniqueness and the supplied generator's modulo mapping before evaluating. Reports and regenerated v3 artifacts go under `backend/runtime/evaluation`.
+For synthetic evaluation against records already in the broker database, set `BROKER_EVAL_DATABASE_URL` to that existing database and run `python backend/scripts/evaluate_demo.py`. The evaluator verifies positional row counts, consistent identity mappings, per-hospital uniqueness and the supplied generator's modulo mapping, then reads broker memberships in a read-only transaction and scores them against the ground truth. It does not submit records or run migrations. Reports go under `backend/runtime/evaluation`.
 
 The supplied dataset evaluation produced 182 hospital patient records, 27 pending reviews, 11 true-positive pairs, zero false-positive pairs and 91 false-negative pairs: **100% precision on 11 predicted pairs and 10.78% recall**. The review rate was **14.84%**. This small synthetic result demonstrates conservative behaviour, not validated clinical performance. Thresholds were left unchanged.
 
