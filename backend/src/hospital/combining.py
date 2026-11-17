@@ -176,7 +176,8 @@ def build_combination_strings(row: Mapping[str, str]) -> dict[str, str]:
     combinations = {}
     for column, fields in COMBINATIONS:
         parts = [values[field] for field in fields]
-        combinations[column] = SEPARATOR.join(parts)
+        # Missing required identifiers must not become match evidence.
+        combinations[column] = SEPARATOR.join(parts) if all(parts) else ""
     return combinations
 
 
