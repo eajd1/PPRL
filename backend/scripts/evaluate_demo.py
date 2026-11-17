@@ -145,11 +145,12 @@ def main():
         fp += not actual and predicted
         fn += actual and not predicted
         tn += not actual and not predicted
-    report = {"scoring_version": "grouped-24-v1", "threshold_match": 12, "threshold_review": 6,
+    report = {"scoring_version": "existing-memberships-see-version-history", "threshold_match": 12, "threshold_review": 6,
               "records": len(predictions), "database_records": database_records,
               "missing_records": missing_records, "unlinked_records": unlinked_records,
               "pending_review": reviews, "review_rate": reviews / len(predictions),
               "true_positives": tp, "false_positives": fp, "false_negatives": fn, "true_negatives": tn,
+              "pairwise_f1": 2 * tp / (2 * tp + fp + fn) if 2 * tp + fp + fn else None,
               "pairwise_precision": tp / (tp + fp) if tp + fp else None,
               "pairwise_recall": tp / (tp + fn) if tp + fn else None,
               "truth_checks": ["row alignment", "consistent local-to-truth mappings", "one local ID per truth per hospital", "generator modulo mapping"],

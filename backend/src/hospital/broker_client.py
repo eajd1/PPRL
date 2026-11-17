@@ -67,14 +67,14 @@ def send(token_path: Path, state_path: Path, site, filename=None):
         first = rows[0]
         records = []
         metadata = {name: first.get(name) for name in ("token_version", "key_id", "method")}
-        if metadata["token_version"] != "v3" or metadata["method"] != "hmac_sha256" or not metadata["key_id"]:
-            raise HTTPException(409, "Regenerate this file using the configured v3 HMAC scheme")
+        if metadata["token_version"] != "v4" or metadata["method"] != "hmac_sha256" or not metadata["key_id"]:
+            raise HTTPException(409, "Regenerate this file using the configured v4 HMAC scheme")
         for row in rows:
             if row.get("site_id") != str(site) or not row.get("local_patient_id"):
                 raise HTTPException(409, "Token file hospital or patient identity is invalid")
             if any(row.get(name) != value for name, value in metadata.items()):
                 raise HTTPException(409, "Token file has mixed scheme metadata")
-            for position in range(1, 26):
+            for position in range(1, 15):
                 value = row.get(f"token{position}")
                 if not isinstance(value, str) or (value and not re.fullmatch(r"[0-9a-f]{64}", value)):
                     raise HTTPException(409, "Token file has missing or invalid token columns")
@@ -96,7 +96,7 @@ def send(token_path: Path, state_path: Path, site, filename=None):
                 for index, record in enumerate(records):
                     response = client.post(f"{url}/api/v1/submissions/records",
                                            headers={**request_headers, "X-Record-Index": str(index),
-                                                    "X-Token-Index": str(index % 25 + 1)}, json=record)
+                                                    "X-Token-Index": str(index % 14 + 1)}, json=record)
                     if response.status_code >= 400:
                         detail = response.json().get("detail", "Broker rejected this record")
                         raise ValueError(detail if isinstance(detail, str) else "Broker rejected this record")

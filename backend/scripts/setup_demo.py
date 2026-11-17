@@ -14,7 +14,7 @@ def main():
     credentials = {s: secrets.token_urlsafe(32) for s in ("1", "2", "3")}
     hashes = {s: hashlib.sha256(value.encode()).hexdigest() for s, value in credentials.items()}
     files = {
-        ".env": f"PPRL_TOKEN_KEY={secrets.token_hex(32)}\nPPRL_KEY_ID=pprl-linkage-2026-01\nPPRL_TOKEN_VERSION=v3\nPPRL_BROKER_URL=https://broker-proxy:8443\nPPRL_BROKER_CREDENTIALS='{json.dumps(credentials)}'\n",
+        ".env": f"PPRL_TOKEN_KEY={secrets.token_hex(32)}\nPPRL_KEY_ID=pprl-linkage-2026-01\nPPRL_TOKEN_VERSION=v4\nPPRL_BROKER_URL=https://broker-proxy:8443\nPPRL_BROKER_CREDENTIALS='{json.dumps(credentials)}'\n",
         ".env.broker": f"BROKER_DATABASE_URL=postgresql+psycopg://pprl:{password}@postgres:5432/pprl\nBROKER_ADMIN_TOKEN_HASH={hashlib.sha256(admin.encode()).hexdigest()}\nBROKER_HOSPITAL_TOKEN_HASHES='{json.dumps(hashes)}'\nBROKER_KEY_IDS=pprl-linkage-2026-01\n",
         ".env.postgres": f"POSTGRES_DB=pprl\nPOSTGRES_USER=pprl\nPOSTGRES_PASSWORD={password}\n",
         ".env.admin": f"BROKER_ADMIN_TOKEN={admin}\n",

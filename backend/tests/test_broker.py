@@ -22,9 +22,9 @@ from src.hospital.combining import build_combination_strings
 
 
 def row(site="1", pid="001", seed="person", positions=None):
-    positions = set(range(1, 26)) if positions is None else set(positions)
-    return {"site_id": site, "local_patient_id": pid, "token_version": "v3", "key_id": "test-key", "method": "hmac_sha256",
-            **{f"token{i}": hashlib.sha256(f"{seed}:{i}".encode()).hexdigest() if i in positions else "" for i in range(1, 26)}}
+    positions = set(range(1, 15)) if positions is None else set(positions)
+    return {"site_id": site, "local_patient_id": pid, "token_version": "v4", "key_id": "test-key", "method": "hmac_sha256",
+            **{f"token{i}": hashlib.sha256(f"{seed}:{i}".encode()).hexdigest() if i in positions else "" for i in range(1, 15)}}
 
 
 def csv_bytes(rows):
@@ -41,28 +41,7 @@ def config():
 
 
 def as_version(r):
-    return SimpleNamespace(tokens=[r[f"token{i}"] for i in range(1, 26)], **{k: r[k] for k in ("key_id", "method", "token_version")})
-
-
-@pytest.mark.parametrize("positions,score,classification", [
-    ([21], 5, "below_threshold"), ([22], 2, "below_threshold"),
-    ([23], 5, "below_threshold"), ([24], 6, "review"), ([25], 6, "review"),
-    ([5, 6, 7, 21, 22, 23], 5, "below_threshold"),
-    ([19, 20, 24, 25], 6, "review"),
-    ([21, 24], 11, "review"), ([8, 21, 24], 14, "match"),
-])
-def test_private_healthcare_scores_share_existing_caps(positions, score, classification):
-    result = WeightedScorer().score(as_version(row()), as_version(row(positions=positions)))
-    assert (result["score"], result["classification"]) == (score, classification)
-    assert result["matched_tokens"] == positions
-
-
-def test_old_matching_snapshot_remains_compatible():
-    old = as_version(row())
-    old.tokens = old.tokens[:20]
-    result = WeightedScorer().score(old, as_version(row()))
-    assert result["score"] == 24
-    assert result["matched_tokens"] == list(range(1, 21))
+    return SimpleNamespace(tokens=[r[f"token{i}"] for i in range(1, 15)], **{k: r[k] for k in ("key_id", "method", "token_version")})
 
 
 def test_hospital_export_is_accepted_by_broker(tmp_path):
@@ -79,12 +58,12 @@ def test_hospital_export_is_accepted_by_broker(tmp_path):
     records, duplicates = validate_csv(data, "1", config())
     assert duplicates == 0 and len(records) == 1
     assert records[0]["local_patient_id"] == "001"
-    assert len(records[0]) == 30
-    assert all(len(records[0][f"token{i}"]) == 64 for i in range(1, 26))
+    assert len(records[0]) == 19
+    assert all(len(records[0][f"token{i}"]) == 64 for i in range(1, 15))
 
 
 def test_validation_rejects_old_or_incomplete_exports():
-    for remove in [("token_version", "key_id", "method"), tuple(f"token{i}" for i in range(21, 26)), ("token25",)]:
+    for remove in [("token_version", "key_id", "method"), ("token14",), ("token13",)]:
         values = {k: v for k, v in row().items() if k not in remove}
         out = io.StringIO(newline="")
         writer = csv.DictWriter(out, fieldnames=list(values))
@@ -96,15 +75,15 @@ def test_validation_rejects_old_or_incomplete_exports():
 
 def test_missing_fields_are_not_hashed():
     assert all(not v for v in build_combination_strings({}).values())
-    assert build_combination_strings({"first_name": "a", "last_name": "b", "fake_medicare_id": "1234567890"})["first_last_fake_medicare_id"]
+    assert build_combination_strings({"first_name": "a", "last_name": "b", "fake_medicare_id": "1234567890"})["medicare_last_first_initial"]
 
 
 def test_group_caps_and_thresholds():
     scorer = WeightedScorer()
     assert scorer.score(as_version(row()), as_version(row()))["score"] == 24
-    for positions, expected, classification in [([19, 20], 6, "review"), ([1, 5], 9, "review"),
-                                                ([1, 5, 8], 12, "match"), ([1, 2, 3, 4], 4, "below_threshold"),
-                                                ([1, 5, 15], 11, "review"), ([5], 5, "below_threshold"), ([], 0, "below_threshold")]:
+    for positions, expected, classification in [([3, 4], 6, "review"), ([1, 5], 13, "match"),
+                                                ([3, 5, 14], 12, "match"), ([1, 2, 3, 4], 8, "review"),
+                                                ([3, 10], 11, "review"), ([5], 5, "below_threshold"), ([], 0, "below_threshold")]:
         result = scorer.score(as_version(row()), as_version(row(positions=positions)))
         assert (result["score"], result["classification"]) == (expected, classification)
     other = row(); other["key_id"] = "different"
@@ -115,13 +94,13 @@ def test_validation_and_duplicate_handling():
     settings = config()
     rows, count = validate_csv(csv_bytes([row(), row()]), "1", settings)
     assert count == 1 and rows[0]["local_patient_id"] == "001"
-    for bad in [row(site="2"), row(pid=""), {**row(), "token1": "invalid"}, {**row(), "token25": "invalid"}, {**row(), "token_version": "v2"}]:
+    for bad in [row(site="2"), row(pid=""), {**row(), "token1": "invalid"}, {**row(), "token14": "invalid"}, {**row(), "token_version": "v2"}]:
         with pytest.raises(ValidationError):
             validate_csv(csv_bytes([bad]), "1", settings)
     with pytest.raises(ValidationError):
         validate_csv(csv_bytes([row(), row(seed="different")]), "1", settings)
     with pytest.raises(ValidationError):
-        validate_csv(csv_bytes([row()]).replace(b"token20", b"token19"), "1", settings)
+        validate_csv(csv_bytes([row()]).replace(b"token14", b"token13"), "1", settings)
     assert validate_csv(csv_bytes([row(positions=[])]), "1", settings)[0]
     settings.max_rows = 1
     with pytest.raises(ValidationError):
@@ -200,45 +179,45 @@ def test_equal_local_ids_not_identity_evidence(client):
 
 def test_private_healthcare_evidence_is_stored_and_links_hospitals(client):
     from src.broker.models import RecordToken, Assessment
-    a = submit(client, [row(positions=[8, 21, 24])]); process(client)
-    b = submit(client, [row("2", "different", positions=[8, 21, 24])], "2"); process(client)
+    a = submit(client, [row(positions=[2, 10])]); process(client)
+    b = submit(client, [row("2", "different", positions=[2, 10])], "2"); process(client)
     assert result(client, a["id"])[0]["global_patient_id"] == result(client, b["id"], "2")[0]["global_patient_id"]
     with client.app.state.sessions() as db:
-        assert set(db.scalars(select(RecordToken.position))) == {8, 21, 24}
-        assert all(len(v.tokens) == 25 for v in db.scalars(select(RecordVersion)))
-        assert db.scalar(select(Assessment.score)) == 14
+        assert set(db.scalars(select(RecordToken.position))) == {2, 10}
+        assert all(len(v.tokens) == 14 for v in db.scalars(select(RecordVersion)))
+        assert db.scalar(select(Assessment.score)) == 13
 
 
-def test_pre_upgrade_queued_submission_is_recoverable(client):
-    a = submit(client, [row()])
-    with client.app.state.sessions.begin() as db:
-        submission = db.scalar(select(Submission).where(Submission.id == uuid.UUID(a["id"])))
-        submission.payload = [{k: v for k, v in row().items() if k not in {f"token{i}" for i in range(21, 26)}}]
-    process(client)
-    assert result(client, a["id"])[0]["global_patient_id"]
-
-
-def test_unchanged_legacy_snapshot_keeps_content_time_and_global_id(client):
-    values = row(positions=range(1, 21))
-    a = submit(client, [values]); process(client)
-    before = result(client, a["id"])[0]
-    with client.app.state.sessions.begin() as db:
-        legacy = db.scalar(select(RecordVersion))
-        legacy.tokens = legacy.tokens[:20]
-        legacy_id = legacy.id
-    b = submit(client, [values]); process(client)
-    after = result(client, b["id"])[0]
-    assert after["global_patient_id"] == before["global_patient_id"]
-    assert after["content_changed_at"] == before["content_changed_at"]
-    assert after["latest_received_at"] > before["latest_received_at"]
+def test_v3_queue_and_snapshots_remain_readable(client):
+    from src.broker.models import Assessment
+    def legacy(site):
+        return {"site_id":site,"local_patient_id":"old", "token_version":"v3", "key_id":"test-key", "method":"hmac_sha256",
+                **{f"token{i}":hashlib.sha256(f"old:{i}".encode()).hexdigest() for i in range(1,26)}}
+    ids=[]
+    for site in ("1","2"):
+        a=submit(client,[row(site)],site)
+        with client.app.state.sessions.begin() as db:
+            submission=db.scalar(select(Submission).where(Submission.id==uuid.UUID(a["id"])))
+            submission.payload=[legacy(site)]
+        process(client)
+        ids.append(result(client,a["id"],site)[0]["global_patient_id"])
+    assert ids[0] == ids[1]
     with client.app.state.sessions() as db:
-        assert db.scalar(select(func.count()).select_from(RecordVersion)) == 2
-        assert len(db.get(RecordVersion, legacy_id).tokens) == 20
+        assert db.scalar(select(Assessment.scoring_version)) == "grouped-24-v2"
+        assert all(len(v.tokens)==25 for v in db.scalars(select(RecordVersion)))
+    incoming=submit(client,[row(pid="old")]);process(client)
+    update=result(client,incoming["id"])[0]
+    assert update["global_patient_id"] == ids[0]
+    assert update["status"] == "pending_review"
+    with client.app.state.sessions() as db:
+        record=db.scalar(select(HospitalRecord).where(HospitalRecord.site_id=="1"))
+        assert db.get(RecordVersion,record.matching_version_id).token_version=="v3"
+        assert db.get(RecordVersion,record.latest_version_id).token_version=="v4"
 
 
 def test_review_range_and_blank_records(client):
     submit(client, [row()]); process(client)
-    b = submit(client, [row("2", positions=[19])], "2"); process(client)
+    b = submit(client, [row("2", positions=[3])], "2"); process(client)
     assert result(client, b["id"], "2")[0]["global_patient_id"] is None
     c = submit(client, [row("3", positions=[])], "3"); process(client)
     r = result(client, c["id"], "3")[0]
@@ -246,16 +225,16 @@ def test_review_range_and_blank_records(client):
 
 
 def test_transitive_chain_does_not_merge(client):
-    submit(client, [row(positions=range(1, 12))]); process(client)
+    submit(client, [row(positions=[1,5])]); process(client)
     submit(client, [row("2")], "2"); process(client)
-    c = submit(client, [row("3", positions=range(12, 21))], "3"); process(client)
+    c = submit(client, [row("3", positions=[10,11,12,13,14])], "3"); process(client)
     assert result(client, c["id"], "3")[0]["status"] == "pending_review"
     with client.app.state.sessions() as db:
         assert db.scalar(select(func.count()).select_from(GlobalPatient)) == 1
 
 
 def test_ambiguity_and_same_hospital_second_id(client):
-    submit(client, [row(pid="A", positions=range(1, 12)), row(pid="B", positions=range(12, 21))]); process(client)
+    submit(client, [row(pid="A", positions=[1,5]), row(pid="B", positions=[10,11,12,13,14])]); process(client)
     b = submit(client, [row("2")], "2"); process(client)
     assert result(client, b["id"], "2")[0]["status"] == "pending_review"
 
@@ -350,13 +329,13 @@ def record_headers(records, key, index, site="1", digest=None):
     from src.broker.record_transport import record_digest
     return {"Authorization": f"Bearer hospital-{site}", "Idempotency-Key": key,
             "X-Submission-Digest": digest or record_digest(records),
-            "X-Record-Index": str(index), "X-Token-Index": str(index % 25 + 1),
+            "X-Record-Index": str(index), "X-Token-Index": str(index % 14 + 1),
             "X-Token-Count": str(len(records)), "X-Original-Filename": "hospital1.csv",
-            "X-Token-Version": "v3", "X-Key-ID": "test-key", "X-Method": "hmac_sha256"}
+            "X-Token-Version": "v4", "X-Key-ID": "test-key", "X-Method": "hmac_sha256"}
 
 
 def json_tokens(pid="000123"):
-    return [{"hospitalID": "hospital1", "patientID": pid, "token": "a" * 64 if i == 0 else ""} for i in range(25)]
+    return [{"hospitalID": "hospital1", "patientID": pid, "token": "a" * 64 if i == 0 else ""} for i in range(14)]
 
 
 def test_json_records_are_durable_idempotent_and_only_match_when_complete(database, client):
@@ -373,11 +352,11 @@ def test_json_records_are_durable_idempotent_and_only_match_when_complete(databa
         conflict = {**records[0], "token": "b" * 64}
         assert client.post("/api/v1/submissions/records", json=conflict, headers=record_headers(records, key, 0)).status_code == 409
     with TestClient(create_app(config(), start_worker=False)) as client:
-        for index in range(25):
+        for index in range(14):
             response = client.post("/api/v1/submissions/records", json=records[index], headers=record_headers(records, key, index))
             assert response.status_code == 202, response.text
             assert response.json()["id"] == sid
-        assert response.json()["received_count"] == 25
+        assert response.json()["received_count"] == 14
         assert response.json()["status"] == "queued"
         assert process_next(client.app.state.sessions)
         replay = client.post("/api/v1/submissions/records", json=records[0], headers=record_headers(records, key, 0))
@@ -389,7 +368,7 @@ def test_json_records_are_durable_idempotent_and_only_match_when_complete(databa
         with client.app.state.sessions() as db:
             from src.broker.models import IncomingToken
             staged = list(db.scalars(select(IncomingToken).where(IncomingToken.submission_id == uuid.UUID(sid))))
-            assert len(staged) == 25 and sum(item.value == "" for item in staged) == 24
+            assert len(staged) == 14 and sum(item.value == "" for item in staged) == 13
 
 
 def test_json_record_rejects_identity_metadata_and_changed_content(database, client):
@@ -402,7 +381,7 @@ def test_json_record_rejects_identity_metadata_and_changed_content(database, cli
         assert client.post(endpoint, json=numeric, headers=record_headers(records, key, 0)).status_code == 422
         assert client.post(endpoint, json={**records[0], "raw_name": "forbidden"}, headers=record_headers(records, key, 0)).status_code == 422
         headers = record_headers(records, key, 0)
-        headers["X-Token-Count"] = "24"
+        headers["X-Token-Count"] = "13"
         assert client.post(endpoint, json=records[0], headers=headers).status_code == 422
         headers = record_headers(records, key, 0)
         headers["X-Token-Index"] = "2"
@@ -417,7 +396,7 @@ def test_json_record_rejects_identity_metadata_and_changed_content(database, cli
 def test_json_transfer_digest_is_checked_before_matching(database, client):
     records, key = json_tokens(), uuid.uuid4().hex
     with TestClient(create_app(config(), start_worker=False)) as client:
-        for index in range(25):
+        for index in range(14):
             response = client.post("/api/v1/submissions/records", json=records[index],
                                    headers=record_headers(records, key, index, digest="0" * 64))
         assert response.status_code == 422

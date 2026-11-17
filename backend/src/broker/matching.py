@@ -36,11 +36,11 @@ def assess(db, record, version, patient_ids, scorer):
             same_site |= peer.site_id == record.site_id
             peer_version = db.get(RecordVersion, peer.matching_version_id) if peer.matching_version_id else None
             result = scorer.score(version, peer_version) if peer_version else {
-                "score": 0, "matched_tokens": [], "group_scores": [0] * 6,
+                "score": 0, "matched_tokens": [], "group_scores": [0] * (5 if version.token_version == "v4" else 6),
                 "compatible": False, "classification": "below_threshold"}
             db.add(Assessment(version_id=version.id, candidate_patient_id=patient_id,
                               candidate_record_id=peer.id, score=result["score"], evidence=result,
-                              scoring_version=SCORING_VERSION))
+                              scoring_version=result.get("scoring_version", SCORING_VERSION)))
             evidence.append(result)
         groups[patient_id] = {"evidence": evidence, "same_site": same_site,
                               "relevant": any(e["score"] >= 6 for e in evidence),
@@ -52,9 +52,10 @@ def process_record(db, submission, row, scorer):
     record = db.scalar(select(HospitalRecord).where(HospitalRecord.site_id == submission.site_id,
                                                    HospitalRecord.local_patient_id == row["local_patient_id"]))
     received = submission.received_at
-    # Submissions accepted before the 25-token upgrade may still be queued.
-    # Only the five appended positions can be absent in that validated payload.
-    tokens = [row[name] if i < 20 else row.get(name, "") for i, name in enumerate(TOKEN_COLUMNS)]
+    # Old durable v3 queue entries retain their original positions and scorer.
+    count = 14 if row["token_version"] == "v4" else 25
+    tokens = [row[f"token{i}"] if row["token_version"] == "v4" or i <= 20
+              else row.get(f"token{i}", "") for i in range(1, count + 1)]
     if record is None:
         record = HospitalRecord(site_id=submission.site_id, local_patient_id=row["local_patient_id"],
                                 first_received_at=received, latest_received_at=received, content_changed_at=received)
@@ -62,7 +63,7 @@ def process_record(db, submission, row, scorer):
         db.flush()
     previous = db.get(RecordVersion, record.latest_version_id) if record.latest_version_id else None
     # Appending missing private-healthcare positions is not a content change.
-    previous_tokens = previous.tokens + [""] * (len(TOKEN_COLUMNS) - len(previous.tokens)) if previous else None
+    previous_tokens = previous.tokens + [""] * (len(tokens) - len(previous.tokens)) if previous else None
     if previous is None or previous_tokens != tokens or any(getattr(previous, k) != row[k] for k in ("token_version", "key_id", "method")):
         record.content_changed_at = received
     record.latest_received_at = received
@@ -122,7 +123,7 @@ def process_record(db, submission, row, scorer):
     db.add(AuditEvent(submission_id=submission.id, record_id=record.id,
                       event="review_required" if reason else "record_linked" if not membership else "record_updated",
                       details={"global_patient_id": str(patient_id) if patient_id else None,
-                               "reason": reason, "scoring_version": SCORING_VERSION}))
+                               "reason": reason, "scoring_version": SCORING_VERSION if version.token_version == "v4" else "grouped-24-v2"}))
     db.flush()
     return {"local_patient_id": record.local_patient_id,
             "global_patient_id": str(patient_id) if patient_id else None,

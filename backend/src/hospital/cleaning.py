@@ -4,13 +4,13 @@
 Expected structure:
 
 PPRL/
-└── src/
-    ├── data/
-    │   ├── hospital1.csv
-    │   ├── hospital2.csv
-    │   └── hospital3.csv
-    └── hospital/
-        └── cleaning.py
+â””â”€â”€ src/
+    â”œâ”€â”€ data/
+    â”‚   â”œâ”€â”€ hospital1.csv
+    â”‚   â”œâ”€â”€ hospital2.csv
+    â”‚   â””â”€â”€ hospital3.csv
+    â””â”€â”€ hospital/
+        â””â”€â”€ cleaning.py
 
 The script automatically processes every hospital*.csv file inside src/data.
 Additional files such as hospital4.csv will be discovered automatically.
@@ -221,7 +221,7 @@ def read_hospital_csv(
     ]
 
     # hospital_id may be missing; it is then taken from the file name.
-    required = set(REQUIRED_COLUMNS) - {"hospital_id"}
+    required = set(REQUIRED_COLUMNS) - {"hospital_id", "middle_name", "sex"}
     recognised = required.intersection(first_values)
 
     # CSV contains a complete header.
@@ -291,6 +291,11 @@ def read_hospital_csv(
             "Duplicate column names: "
             + ", ".join(duplicate_headers)
         )
+
+    # V4 does not use middle name or sex; retain optional columns for local reports.
+    for optional in ("middle_name", "sex"):
+        if optional not in frame.columns:
+            frame[optional] = ""
 
     missing_columns = [
         column

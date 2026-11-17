@@ -15,7 +15,7 @@ Input  (one file per hospital, made by combining.py):
 Output (sent to the broker):
     site_id, local_patient_id, token_version, key_id, method, <token 1>, <token 2>, ...
 
-Output columns token1 through token25 follow the fixed combination order.
+Output columns token1 through token14 follow the fixed combination order.
 A blank combination (a field was missing) stays blank, so the broker skips it.
 local_patient_id is copied unchanged and is never hashed: it is a local label
 each hospital uses to find its own patient when results come back.
@@ -68,7 +68,7 @@ MIN_KEY_BYTES = 32
 
 # Bump this if the hashing input format changes, so old and new tokens
 # can never match by accident.
-TOKEN_SCHEME_VERSION = os.environ.get("PPRL_TOKEN_VERSION", "v3")
+TOKEN_SCHEME_VERSION = os.environ.get("PPRL_TOKEN_VERSION", "v4")
 TOKEN_KEY_ID = os.environ.get("PPRL_KEY_ID", "")
 
 # Separates the version, combination name and value before hashing.
@@ -221,7 +221,15 @@ def tokenise_file(
     key_id = (key_id if key_id is not None else TOKEN_KEY_ID) if method in KEYED_METHODS else "unkeyed"
     if not key_id or not re.fullmatch(r"[A-Za-z0-9_.-]+", key_id):
         raise TokenisationError("Set PPRL_KEY_ID to a nonblank key label in .env")
+    if TOKEN_SCHEME_VERSION != "v4":
+        raise TokenisationError("Set PPRL_TOKEN_VERSION=v4 and regenerate combinations before exporting")
+    try:
+        from .combining import COMBINATIONS
+    except ImportError:
+        from combining import COMBINATIONS
     combination_columns, rows = read_combinations(input_path)
+    if combination_columns != [name for name, _ in COMBINATIONS]:
+        raise TokenisationError("Expected the 14 v4 combination columns in their defined order; regenerate combinations")
     site_id = rows[0]["hospital_id"]
     stem = input_path.stem.removesuffix("_combinations")
     token_path = output_dir / f"{stem}_tokens.csv"

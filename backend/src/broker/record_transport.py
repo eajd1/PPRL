@@ -32,7 +32,7 @@ def accept_record(sessions, settings, site, record, key, digest, index, position
     if not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", key) or not re.fullmatch(r"[0-9a-f]{64}", digest):
         raise HTTPException(422, "Invalid submission identifier or digest")
     if not 1 <= count <= settings.max_rows * len(TOKEN_COLUMNS) or count % len(TOKEN_COLUMNS):
-        raise HTTPException(422, "Expected count must include all 25 token positions per patient")
+        raise HTTPException(422, "Expected count must include all 14 token positions per patient")
     if not 0 <= index < count or position != index % len(TOKEN_COLUMNS) + 1:
         raise HTTPException(422, "Invalid record index or token position")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._ -]{0,115}\.csv", filename, re.I):

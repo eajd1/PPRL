@@ -10,9 +10,9 @@ def test_lost_response_reuses_submission_identifier(tmp_path, monkeypatch):
     monkeypatch.setenv("PPRL_BROKER_URL", "https://broker.test")
     monkeypatch.setenv("PPRL_BROKER_CREDENTIALS", json.dumps({"1": "service-secret"}))
     tokens = tmp_path / "tokens.csv"
-    row = {"site_id": "1", "local_patient_id": "000123", "token_version": "v3",
+    row = {"site_id": "1", "local_patient_id": "000123", "token_version": "v4",
            "key_id": "test-key", "method": "hmac_sha256",
-           **{f"token{i}": "a" * 64 if i == 1 else "" for i in range(1, 26)}}
+           **{f"token{i}": "a" * 64 if i == 1 else "" for i in range(1, 15)}}
     with tokens.open("w", newline="") as output:
         writer = csv.DictWriter(output, fieldnames=list(row))
         writer.writeheader()
@@ -33,13 +33,13 @@ def test_lost_response_reuses_submission_identifier(tmp_path, monkeypatch):
         assert request.headers["Content-Type"] == "application/json"
         assert int(request.headers["X-Token-Index"]) == index + 1
         return httpx.Response(202, json={"id": "submission-id", "site_id": "1",
-                              "status": "queued" if index == 24 else "receiving",
-                              "expected_count": 25, "received_count": index + 1,
+                              "status": "queued" if index == 13 else "receiving",
+                              "expected_count": 14, "received_count": index + 1,
                               "received_at": "2026-01-01T00:00:00Z"})
     monkeypatch.setattr(broker_client.httpx, "Client", lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
     assert broker_client.send(tokens, state, "1")["status"] == "failed"
     assert broker_client.send(tokens, state, "1")["status"] == "accepted"
-    assert len(seen) == 26 and len(set(seen)) == 1
+    assert len(seen) == 15 and len(set(seen)) == 1
     assert "service-secret" not in state.read_text()
 
 

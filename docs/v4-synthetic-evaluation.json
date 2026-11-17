@@ -1,0 +1,99 @@
+{
+  "thresholds": {
+    "match": 12,
+    "review": 6
+  },
+  "results": {
+    "v3": {
+      "verified_repository_dataset": {
+        "records": 182,
+        "true_positives": 12,
+        "false_positives": 0,
+        "false_negatives": 90,
+        "precision": 1.0,
+        "recall": 0.11764705882352941,
+        "f1": 0.21052631578947367,
+        "review_rate": 0.14835164835164835
+      },
+      "held_out_seed_1729_shared_family_ids": {
+        "records": 120,
+        "true_positives": 10,
+        "false_positives": 0,
+        "false_negatives": 110,
+        "precision": 1.0,
+        "recall": 0.08333333333333333,
+        "f1": 0.15384615384615385,
+        "review_rate": 0.4666666666666667
+      },
+      "held_out_seed_2718_shared_family_ids": {
+        "records": 120,
+        "true_positives": 9,
+        "false_positives": 0,
+        "false_negatives": 111,
+        "precision": 1.0,
+        "recall": 0.075,
+        "f1": 0.13953488372093023,
+        "review_rate": 0.45
+      },
+      "held_out_seed_31415_shared_family_ids": {
+        "records": 120,
+        "true_positives": 4,
+        "false_positives": 0,
+        "false_negatives": 116,
+        "precision": 1.0,
+        "recall": 0.03333333333333333,
+        "f1": 0.06451612903225806,
+        "review_rate": 0.48333333333333334
+      }
+    },
+    "v4": {
+      "verified_repository_dataset": {
+        "records": 182,
+        "true_positives": 95,
+        "false_positives": 0,
+        "false_negatives": 7,
+        "precision": 1.0,
+        "recall": 0.9313725490196079,
+        "f1": 0.9644670050761421,
+        "review_rate": 0.01098901098901099
+      },
+      "held_out_seed_1729_shared_family_ids": {
+        "records": 120,
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 120,
+        "precision": null,
+        "recall": 0.0,
+        "f1": 0.0,
+        "review_rate": 0.6666666666666666
+      },
+      "held_out_seed_2718_shared_family_ids": {
+        "records": 120,
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 120,
+        "precision": null,
+        "recall": 0.0,
+        "f1": 0.0,
+        "review_rate": 0.6666666666666666
+      },
+      "held_out_seed_31415_shared_family_ids": {
+        "records": 120,
+        "true_positives": 0,
+        "false_positives": 0,
+        "false_negatives": 120,
+        "precision": null,
+        "recall": 0.0,
+        "f1": 0.0,
+        "review_rate": 0.6666666666666666
+      }
+    }
+  },
+  "note": "Provisional fixed weights; no tuning on these seeds. Shared family IDs, DOB and phone are deliberate stress cases. No clinical accuracy claim.",
+  "dataset_sha256": {
+    "hospital1.csv": "498f53b8b26f0d276e2be5f7a21d3ee0d1115e1ad18c8a5d4382f76858daf55a",
+    "hospital2.csv": "f717049324643bbddd954dde50a1cc59a86a4786c5827ed1ced3d450a2a8d724",
+    "hospital3.csv": "0944da6efe77e493f526c3fa64621d69b26e506958776e479843906bf6949218",
+    "ground_truth.csv": "69594e22340684537f493015d7bd68c5d03264f4ac41cf48e3e0a3a652c6b19a"
+  }
+}

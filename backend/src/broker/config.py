@@ -15,7 +15,7 @@ class Settings:
     admin_hash: str = field(default_factory=lambda: os.environ.get("BROKER_ADMIN_TOKEN_HASH", ""))
     hospitals: dict = field(default_factory=lambda: json.loads(os.environ.get("BROKER_HOSPITAL_TOKEN_HASHES", "{}")))
     key_ids: tuple = field(default_factory=lambda: tuple(os.environ.get("BROKER_KEY_IDS", "pprl-linkage-2026-01").split(",")))
-    token_version: str = "v3"
+    token_version: str = "v4"
     max_bytes: int = field(default_factory=lambda: int(os.environ.get("BROKER_MAX_BYTES", 25 * 1024 * 1024)))
     max_rows: int = field(default_factory=lambda: int(os.environ.get("BROKER_MAX_ROWS", 10000)))
     static_dir: str = field(default_factory=lambda: os.environ.get("BROKER_STATIC_DIR", "/app/dashboard"))

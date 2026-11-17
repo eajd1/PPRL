@@ -24,7 +24,8 @@ import token_generator as tg  # noqa: E402
 
 KEY = bytes.fromhex("11" * 32)
 OTHER_KEY = bytes.fromhex("22" * 32)
-COMBOS = ["first_last_fake_medicare_id", "first_last_middle_dob_dmy_phone"]
+from combining import COMBINATIONS
+COMBOS = [name for name, _ in COMBINATIONS]
 
 
 def write_combinations(path: Path, rows: list[dict[str, str]], header=None) -> None:
@@ -142,7 +143,7 @@ class EndToEndTests(unittest.TestCase):
             token_columns = [f"token{i}" for i in range(1, len(COMBOS) + 1)]
             self.assertEqual(list(h1[0]), ["site_id", "local_patient_id", "token_version", "key_id", "method", *token_columns])
             self.assertEqual(h1[0]["local_patient_id"], "0")          # copied, not hashed
-            for name in token_columns:
+            for name in token_columns[:2]:
                 self.assertEqual(h1[0][name], h2[0][name])            # same patient matches
                 self.assertNotEqual(h1[0][name], h2[1][name])         # different patient doesn't
             self.assertEqual(h2[1][token_columns[1]], "")             # blank stays blank

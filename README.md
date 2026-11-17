@@ -1,7 +1,7 @@
 # Hospital PPRL and PostgreSQL matching broker
 
-The original application is retained: local hospital CSV processing, record-wise JSON delivery, the 25-token
-v3 scheme, PostgreSQL matching, global patient IDs and the React broker-dashboard.
+The original application is retained: local hospital CSV processing, record-wise JSON delivery, the 14-token
+v4 scheme, PostgreSQL matching, global patient IDs and the React broker-dashboard.
 Security from the security branch is integrated around that workflow.
 
 ```text
@@ -57,3 +57,5 @@ python scripts/check_secure_broker.py
 Database integration tests require a separate disposable `pprl_test*` database.
 They skip when `BROKER_TEST_DATABASE_URL` is not set. Stop with
 `docker compose down`; do not add `--volumes` unless deliberately deleting data.
+
+For the 14-token v4 definitions, upgrade limitations and reproducible evaluation, see [broker/README.md](broker/README.md#v4-combinations-and-scoring). Set `PPRL_TOKEN_VERSION=v4` in existing hospital configuration before rebuilding. Preserve credentials and certificates.

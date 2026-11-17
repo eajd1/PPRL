@@ -13,6 +13,8 @@ from src.hospital import cleaning, combining, token_generator as tokens
 
 
 def validate_configuration() -> bytes:
+    if tokens.TOKEN_SCHEME_VERSION != "v4":
+        raise tokens.TokenisationError("Set PPRL_TOKEN_VERSION=v4 and regenerate all hospital tokens")
     key = tokens.load_key(None)
     if not tokens.TOKEN_KEY_ID or not tokens.re.fullmatch(r"[A-Za-z0-9_.-]+", tokens.TOKEN_KEY_ID):
         raise tokens.TokenisationError("Set a valid PPRL_KEY_ID in the shared .env configuration")
