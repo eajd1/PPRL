@@ -738,6 +738,57 @@ def patient_quality_metrics(
 # Patient-level consolidation
 # ---------------------------------------------------------------------------
 
+def collect_patient_conflicts(cleaned_visits: pd.DataFrame, *, ties_only: bool = False) -> list[dict]:
+    """Describe conflicting values, optionally retaining only tied maxima."""
+    patients = []
+    for (site, patient), group in cleaned_visits.groupby(
+        ["hospital_id", "local_patient_id"], sort=False, dropna=False
+    ):
+        fields = []
+        for column in LINKAGE_COLUMNS:
+            counts = Counter(str(value) for value in group[column] if str(value).strip())
+            if len(counts) < 2:
+                continue
+            ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            majority = ordered[0][1] > ordered[1][1]
+            if ties_only and majority:
+                continue
+            fields.append({"field": column,
+                           "values": [{"value": value, "count": count} for value, count in ordered],
+                           "suggested_value": ordered[0][0] if majority else None,
+                           "resolution": "majority" if majority else "tie"})
+        if fields:
+            patients.append({"hospital_id": str(site), "local_patient_id": str(patient),
+                             "fields": fields})
+    return patients
+
+
+def validate_patient_resolutions(conflicts: list[dict], resolutions: dict) -> None:
+    """Require one observed value or an explicit blank for every conflict."""
+    allowed = {patient["local_patient_id"]: {
+        field["field"]: {item["value"] for item in field["values"]} | {""}
+        for field in patient["fields"]} for patient in conflicts}
+    if not isinstance(resolutions, dict) or set(resolutions) != set(allowed):
+        raise ValueError("Confirm every patient with a consolidation conflict")
+    for patient, fields in allowed.items():
+        chosen = resolutions[patient]
+        if not isinstance(chosen, dict) or set(chosen) != set(fields):
+            raise ValueError("Choose a value or explicitly leave blank for every conflicting field")
+        for field, choices in fields.items():
+            if not isinstance(chosen[field], str) or chosen[field] not in choices:
+                raise ValueError("A resolution must use an observed cleaned value or an explicit blank")
+
+
+def resolve_patient_linkage(cleaned_path: Path, output_path: Path, resolutions: dict,
+                            *, review_ties_only: bool = False) -> dict:
+    visits = pd.read_csv(cleaned_path, dtype=str, keep_default_na=False)
+    table, report = build_patient_linkage_table(
+        visits, resolutions=resolutions, review_ties_only=review_ties_only)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    table.to_csv(output_path, index=False, encoding="utf-8")
+    return report
+
+
 def choose_patient_value(
     values: pd.Series,
 ) -> tuple[str, str]:
@@ -776,6 +827,8 @@ def choose_patient_value(
 
 def build_patient_linkage_table(
     cleaned_visits: pd.DataFrame,
+    resolutions: dict | None = None,
+    *, review_ties_only: bool = False,
 ) -> tuple[pd.DataFrame, dict[str, object]]:
     """Create one linkage row per local patient.
 
@@ -783,6 +836,10 @@ def build_patient_linkage_table(
     separate visits do not generate duplicate tokenisation records.
     """
 
+    # Retain the original policy for jobs prepared before ties-only review.
+    conflicts = collect_patient_conflicts(cleaned_visits, ties_only=review_ties_only)
+    if resolutions is not None:
+        validate_patient_resolutions(conflicts, resolutions)
     patient_rows: list[dict[str, str]] = []
 
     majority_counts = {
@@ -833,6 +890,9 @@ def build_patient_linkage_table(
                 )
             )
 
+            confirmed = resolutions is not None and column in resolutions.get(str(local_patient_id), {})
+            if confirmed:
+                selected = resolutions[str(local_patient_id)][column]
             patient_row[column] = selected
 
             if resolution in {
@@ -843,10 +903,10 @@ def build_patient_linkage_table(
                     patient_key
                 )
 
-            if resolution == "majority":
+            if resolution == "majority" and not confirmed:
                 majority_counts[column] += 1
 
-            elif resolution == "tie":
+            elif resolution == "tie" and not confirmed:
                 tie_counts[column] += 1
                 tied_patients.add(
                     patient_key
@@ -891,6 +951,24 @@ def build_patient_linkage_table(
             "leave tied values blank."
         ),
     }
+
+    if resolutions is not None:
+        report["fields_confirmed_locally"] = {
+            column: sum(column in fields for fields in resolutions.values())
+            for column in LINKAGE_COLUMNS
+        }
+        report["fields_explicitly_left_blank"] = {
+            column: sum(fields.get(column) == "" for fields in resolutions.values())
+            for column in LINKAGE_COLUMNS
+        }
+        report["consolidation_rule"] = (
+            "Use the only nonblank value when consistent; automatically use "
+            "the unique most-frequent nonblank value; use the locally confirmed "
+            "observed value or explicit blank for tied maxima."
+            if review_ties_only else
+            "Use the only nonblank value when consistent; use the locally "
+            "confirmed observed value or explicit blank for every conflict."
+        )
 
     return linkage_table, report
 
@@ -1167,9 +1245,12 @@ def process_hospital(
         linkage_path
     )
 
-    # report["patient_consolidation"] = (
-    #     consolidation_report
-    # )
+    # Counts are safe in the normal report; alternatives stay in a local review file.
+    report["patient_consolidation"] = consolidation_report
+    conflicts = collect_patient_conflicts(cleaned_visits, ties_only=True)
+    conflict_path = report_path.with_name(f"{input_path.stem}_consolidation_conflicts.json")
+    write_json({"hospital_id": report["hospital_id"], "review_policy": "ties_only",
+                "patients": conflicts}, conflict_path)
 
     write_json(
         report,
@@ -1210,6 +1291,10 @@ def process_hospital(
             linkage_path
         ),
         "report_file": str(report_path),
+        "conflicts_file": str(conflict_path),
+        "consolidation_review_policy": "ties_only",
+        "conflict_patients": len(conflicts),
+        "conflict_fields": sum(len(patient["fields"]) for patient in conflicts),
     }
 
 

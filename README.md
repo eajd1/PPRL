@@ -47,6 +47,60 @@ record-only CSV storage is not used by the matching application.
 The file structure remains `backend/`, `frontend/`, `broker-dashboard/` and
 `broker/` (TLS proxy configuration). See [broker/README.md](broker/README.md) for details.
 
+## Review consolidation conflicts locally
+
+Upload a hospital CSV in the hospital workspace as usual. For each hospital/local
+patient ID and linkage field, the unique most-frequent nonblank cleaned value is
+automatically chosen. Only a tie for the highest count pauses the file at **Review
+required**, before combinations or tokens are created. Select **Review patient
+details** to see tied fields, their observed values and occurrence counts. Choose
+one observed value or explicitly leave the field blank, then select **Confirm and
+generate tokens**. Files without tied fields finish automatically.
+
+For example, `ram: 3, raymon: 1` automatically selects `ram`; `ram: 2, raymon: 2`
+requires a decision. A unique maximum does not need more than half of the rows:
+`ram: 2, raymon: 1, ramon: 1` also selects `ram`. Counts are calculated after
+cleaning and the existing exact-duplicate removal, ignoring blanks.
+
+To select blanks for the whole review, use **Leave all review fields blank**.
+This replaces choices for all review patients and pages, including pages not yet
+opened. It affects only fields in this file's review list; automatically chosen
+values and other patient fields stay intact. You can change individual choices
+afterward. Select **Confirm and generate tokens** to save the decisions and
+continue. Each blank skips combinations requiring that field. The bulk button
+itself does not save decisions or generate tokens; a failed page request keeps
+your previous choices.
+
+All tied fields shown for a new file need a decision. A single nonblank value mixed
+with blanks is not a conflict. Blank decisions omit every combination that needs
+that field. Counts do not establish the correct identity: consult the local
+source records when deciding. This first version permits observed cleaned values
+and explicit blanks; to correct a value that does not appear in the choices,
+correct the source CSV and upload it as a new job.
+
+The cleaned visit rows remain intact. Confirmed choices produce one linkage row
+and one token vector per local patient. Local conflict and decision JSON files
+are kept under the job's runtime directory; they are not sent to the broker.
+Decisions are saved when Confirm is selected, not while merely changing dropdowns.
+Waiting jobs survive backend restarts, and failed token generation can be retried
+from the review dialog with the saved choices. Completed files in a mixed batch
+remain downloadable while another file is waiting.
+
+Existing completed jobs and previously prepared review lists are not changed.
+Older waiting jobs can still be completed using their original choices; upload
+the source CSV as a new job to apply the reduced, ties-only review list. Rebuild
+with `docker compose up --build -d`; no database
+migration or volume reset is needed. Token definitions, scoring and broker
+matching are unchanged. Token 8 remains **last name + DOB + postcode** and token 9
+remains **first name + DOB + postcode**. A combination remains blank when any
+required field is missing. New tokens must be explicitly sent to the broker and
+are subject to its existing update and review rules.
+
+The command-line pipeline also stops for conflicts (exit code 2) and writes a
+local conflict JSON report. To use the review dialog, upload the original CSV in
+the hospital workspace as a new job; the dialog cannot import a CLI output directory.
+See [CHANGES_CONSOLIDATION_REVIEW.md](CHANGES_CONSOLIDATION_REVIEW.md) for the file list.
+
 ## Verify
 
 ```powershell

@@ -39,5 +39,13 @@
     </main>
   </div>
   <dialog id="previewDialog" aria-labelledby="previewTitle"><div class="dialog-header"><div><span class="eyebrow">TOKEN FILE PREVIEW</span><h2 id="previewTitle">Tokenised records</h2><p id="previewMeta"></p></div><button id="closePreview" type="button" class="icon-button" aria-label="Close token preview">×</button></div><div class="preview-note">Blank tokens indicate incomplete combinations. The full token values are available here and in the CSV download.</div><div id="previewError" class="error-text" role="alert" hidden></div><div id="previewTable" class="table-scroll" aria-live="polite"></div><div class="dialog-footer"><span id="previewPage"></span><div class="pagination"><button id="previousPage" type="button" class="button secondary">Previous</button><button id="nextPage" type="button" class="button secondary">Next</button><a id="previewDownload" class="button primary">Download CSV ↓</a></div></div></dialog>
+  <dialog id="reviewDialog" aria-labelledby="reviewTitle">
+    <div class="dialog-header"><div><span class="eyebrow">HOSPITAL LOCAL REVIEW</span><h2 id="reviewTitle">Review patient details</h2><p id="reviewMeta"></p></div><button id="closeReview" class="icon-button" type="button" aria-label="Close consolidation review">×</button></div>
+    <p class="preview-note">For new uploads, the most frequent nonblank value is chosen automatically when it has a unique highest count. Only tied values need your decision. Choose an observed cleaned value or explicitly leave the field blank. Original visit records stay intact. Choices are saved when you select Confirm and generate tokens. Jobs created before this update keep their original review list.</p>
+    <div id="reviewError" class="error-text" role="alert" hidden></div>
+    <div class="review-bulk"><button id="reviewBlankAll" class="button secondary" type="button" disabled>Leave all review fields blank</button><div><p class="result-details">Replaces choices for every patient and page in this review. Other patient fields stay unchanged. Confirm afterward to generate tokens.</p><p id="reviewBulkStatus" class="result-details" aria-live="polite"></p></div></div>
+    <div id="reviewPatients" class="review-patients" aria-live="polite"></div>
+    <div class="review-footer"><div><p id="reviewProgress" aria-live="polite"></p><p class="result-details">All fields shown in this file require a decision.</p></div><div class="pagination"><button id="reviewPrevious" class="button secondary" type="button">Previous</button><button id="reviewNext" class="button secondary" type="button">Next</button><button id="reviewConfirm" class="button primary" type="button" disabled>Confirm and generate tokens</button></div></div>
+  </dialog>
 </body>
 </html>

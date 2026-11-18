@@ -1,9 +1,10 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
-const state = { files: [], busy: false, online: false, job: null, preview: null, previewRequest: 0 };
+const state = { files: [], busy: false, online: false, job: null, preview: null, previewRequest: 0, review: null, reviewRequest: 0 };
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_FILES = 20;
-const finalStatuses = new Set(['success', 'partial_success', 'failure']);
+// Awaiting review is settled for polling, but can resume after confirmation.
+const finalStatuses = new Set(['success', 'partial_success', 'failure', 'awaiting_review']);
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -85,10 +86,11 @@ function renderJob(job) {
   state.job = job; $('resultsSection').hidden = false;
   const succeeded = job.files.filter(f => f.status === 'success').length;
   const failed = job.files.filter(f => f.status === 'failure').length;
-  const pending = job.files.length - succeeded - failed;
-  $('resultSummary').textContent = pending ? `${succeeded} complete · ${failed} failed · ${pending} preparing` : `${succeeded} ${succeeded === 1 ? 'file' : 'files'} completed successfully${failed ? ` · ${failed} failed` : ''}.`;
+  const waiting = job.files.filter(f => f.status === 'awaiting_review').length;
+  const pending = job.files.filter(f => f.status === 'queued' || f.status === 'processing').length;
+  $('resultSummary').textContent = `${succeeded} complete · ${waiting} awaiting local review · ${failed} failed${pending ? ` · ${pending} preparing` : ''}.`;
   const stats = $('resultStats'); stats.replaceChildren();
-  for (const [value, label] of [[succeeded, 'Files completed'], [failed, 'Files failed'], [job.files.reduce((sum, f) => sum + (f.patients || 0), 0), 'Patient rows tokenised']]) {
+  for (const [value, label] of [[succeeded, 'Files completed'], [waiting, 'Files awaiting review'], [failed, 'Files failed'], [job.files.filter(f => f.status === 'success').reduce((sum, f) => sum + (f.patients || 0), 0), 'Patient rows tokenised']]) {
     const stat = el('div', 'stat'); stat.append(el('strong', '', String(value)), el('span', '', label)); stats.append(stat);
   }
   $('downloadAll').hidden = !succeeded || !finalStatuses.has(job.status);
@@ -99,7 +101,7 @@ function renderJob(job) {
     const head = el('div', 'result-head'); head.append(el('span', 'csv-badge', 'CSV'));
     const title = el('div', 'file-copy'); title.append(el('h3', '', file.filename));
     if (file.hospital_id !== undefined) title.append(el('div', 'file-meta', `Hospital ${file.hospital_id}`));
-    head.append(title, el('span', `status-badge ${file.status}`, { success: 'Success', failure: 'Failed', queued: 'Queued', processing: 'Processing' }[file.status] || file.status)); card.append(head);
+    head.append(title, el('span', `status-badge ${file.status}`, { success: 'Success', failure: 'Failed', queued: 'Queued', processing: 'Processing', awaiting_review: 'Review required' }[file.status] || file.status)); card.append(head);
     if (file.status === 'success') {
       const metrics = el('div', 'metrics');
       for (const [value, label] of [[file.input_rows, 'Uploaded rows'], [file.patients, 'Unique patients'], [file.tokens_generated, 'Tokens generated']]) {
@@ -109,10 +111,19 @@ function renderJob(job) {
       const invalid = Object.entries(file.invalid_values || {}).filter(([, count]) => count > 0).map(([field, count]) => `${field}: ${count}`);
       if (invalid.length) card.append(el('p', 'result-warning', `Invalid values replaced with blanks — ${invalid.join(' · ')}. Processing succeeded for the remaining data.`));
       if (file.patients_with_no_tokens) card.append(el('p', 'result-warning', `${file.patients_with_no_tokens} patient rows contain no tokens because their identifier combinations are incomplete.`));
+      if (file.resolved_conflict_fields) card.append(el('p', 'result-details', `${file.resolved_conflict_fields} conflicting fields confirmed locally before tokenisation.`));
       const actions = el('div', 'result-actions');
       const preview = el('button', 'button primary', 'View tokens'); preview.type = 'button'; preview.addEventListener('click', () => openPreview(file));
       actions.append(preview, link(file.downloads.tokens, 'Download CSV ↓'), link(file.downloads.token_report, 'Token report ↓'), link(file.downloads.cleaning_report, 'Cleaning report ↓')); card.append(actions);
       addBrokerControls(card, file, job.job_id);
+    } else if (file.status === 'awaiting_review') {
+      card.append(el('p', 'result-warning', `${file.conflict_patients} patient records have ${file.conflict_fields} conflicting fields. Review the details before generating tokens. No tokens from this file are available for broker submission yet.`));
+      if (file.review_error) card.append(el('p', 'error-text', file.review_error));
+      const actions = el('div', 'result-actions');
+      const review = el('button', 'button primary', 'Review patient details'); review.type = 'button';
+      review.disabled = state.busy && !finalStatuses.has(job.status);
+      review.addEventListener('click', () => openConsolidationReview(file, job.job_id));
+      actions.append(review); card.append(actions);
     } else if (file.status === 'failure') card.append(el('p', 'error-text', file.error || 'This file could not be processed.'));
     else card.append(el('p', 'result-details', file.status === 'processing' ? 'Cleaning, consolidating and generating tokens…' : 'Waiting for local processing…'));
     list.append(card);
@@ -143,8 +154,8 @@ async function processFiles() {
     const form = new FormData(); state.files.forEach(file => form.append('files', file));
     const job = await upload(form); saveJobId(job.job_id); renderJob(job);
     $('resultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    await pollJob(job.job_id);
-    $('progressLabel').textContent = 'Processing finished.'; $('progressValue').textContent = '';
+    const completed = await pollJob(job.job_id);
+    $('progressLabel').textContent = completed.status === 'awaiting_review' ? 'Preparation paused. Review the conflicting patient details below.' : 'Processing finished.'; $('progressValue').textContent = '';
     state.files = [];
   } catch (error) { setError(error.message); $('progressLabel').textContent = 'Processing could not be completed.'; }
   finally { state.busy = false; renderSelection(); }
@@ -218,6 +229,164 @@ async function initialise() {
   }
 }
 initialise();
+
+
+function reviewKey(patientId, field) { return `${patientId}\u0000${field}`; }
+function updateReviewProgress() {
+  const review = state.review;
+  if (!review) return;
+  $('reviewProgress').textContent = `${review.decisions.size} of ${review.totalFields} fields confirmed · Patients ${review.total ? review.offset + 1 : 0}–${Math.min(review.offset + review.pageSize, review.total)} of ${review.total}`;
+  const busy = review.loading || review.saving || review.bulkBlanking;
+  $('reviewConfirm').disabled = busy || review.failed || !review.revision || review.decisions.size !== review.totalFields;
+  $('reviewBlankAll').disabled = busy || review.failed || !review.revision;
+  $('reviewBlankAll').textContent = review.bulkBlanking ? 'Selecting blanks…' : 'Leave all review fields blank';
+  $('reviewPatients').querySelectorAll('select').forEach(select => { select.disabled = busy; });
+  $('reviewPrevious').disabled = busy || review.offset === 0;
+  $('reviewNext').disabled = busy || review.offset + review.pageSize >= review.total;
+}
+
+async function openConsolidationReview(file, jobId) {
+  state.review = { file, jobId, offset: 0, pageSize: 10, total: file.conflict_patients,
+    totalFields: file.conflict_fields, revision: null, decisions: new Map(), loadedSaved: false,
+    loading: false, saving: false, bulkBlanking: false };
+  $('reviewTitle').textContent = 'Review patient details';
+  $('reviewMeta').textContent = `${file.filename} · Hospital ${file.hospital_id}`;
+  $('reviewConfirm').textContent = 'Confirm and generate tokens';
+  $('reviewBulkStatus').textContent = '';
+  $('reviewDialog').showModal();
+  await loadConsolidationPage();
+}
+
+async function loadConsolidationPage() {
+  const review = state.review;
+  if (!review) return;
+  const request = ++state.reviewRequest;
+  review.loading = true; review.failed = false; $('reviewError').hidden = true;
+  $('reviewPatients').replaceChildren(el('p', 'result-details', 'Loading local consolidation conflicts…'));
+  updateReviewProgress();
+  try {
+    const data = await getJson(`/api/jobs/${review.jobId}/files/${review.file.file_id}/consolidation-conflicts?offset=${review.offset}&limit=${review.pageSize}`);
+    if (request !== state.reviewRequest || state.review !== review) return;
+    if (review.revision && review.revision !== data.revision) throw new Error('Review data changed. Close and reopen this dialog.');
+    review.revision = data.revision; review.total = data.total;
+    if (!review.loadedSaved) {
+      for (const [patientId, fields] of Object.entries(data.saved_decisions || {})) {
+        for (const [field, value] of Object.entries(fields)) {
+          review.decisions.set(reviewKey(patientId, field), { local_patient_id: patientId, field, value });
+        }
+      }
+      review.loadedSaved = true;
+    }
+    const container = $('reviewPatients'); container.replaceChildren();
+    for (const patient of data.patients) {
+      const card = el('section', 'review-patient');
+      card.append(el('h3', '', `Hospital ${patient.hospital_id} · Local patient ${patient.local_patient_id}`));
+      for (const field of patient.fields) {
+        const row = el('div', 'review-field');
+        const label = el('label');
+        label.append(el('span', 'review-field-name', field.field.replaceAll('_', ' ')));
+        label.append(el('span', 'result-details', field.resolution === 'tie' ? 'Tied values — no automatic selection' : 'Most frequent value shown as a suggestion'));
+        const select = el('select');
+        select.setAttribute('aria-label', `Patient ${patient.local_patient_id} ${field.field.replaceAll('_', ' ')}`);
+        const placeholder = el('option', '', 'Choose a value…'); placeholder.value = ''; placeholder.disabled = true;
+        select.append(placeholder);
+        field.values.forEach((item, index) => {
+          const option = el('option', '', `${item.value} — ${item.count} occurrence${item.count === 1 ? '' : 's'}${item.value === field.suggested_value ? ' (suggested)' : ''}`);
+          option.value = String(index); select.append(option);
+        });
+        const blank = el('option', '', 'Leave blank — omit combinations requiring this field'); blank.value = 'blank'; select.append(blank);
+        const key = reviewKey(patient.local_patient_id, field.field);
+        const chosen = review.decisions.get(key);
+        select.value = chosen ? (chosen.value === '' ? 'blank' : String(field.values.findIndex(item => item.value === chosen.value))) : '';
+        select.addEventListener('change', () => {
+          const value = select.value === 'blank' ? '' : field.values[Number(select.value)].value;
+          review.decisions.set(key, { local_patient_id: patient.local_patient_id, field: field.field, value });
+          $('reviewBulkStatus').textContent = '';
+          updateReviewProgress();
+        });
+        label.append(select); row.append(label); card.append(row);
+      }
+      container.append(card);
+    }
+  } catch (error) {
+    if (request !== state.reviewRequest) return;
+    review.failed = true;
+    $('reviewPatients').replaceChildren(); $('reviewError').textContent = error.message; $('reviewError').hidden = false;
+  } finally {
+    if (request === state.reviewRequest && state.review === review) { review.loading = false; updateReviewProgress(); }
+  }
+}
+
+async function leaveAllReviewFieldsBlank() {
+  const review = state.review;
+  if (!review || review.loading || review.failed || review.saving || review.bulkBlanking || !review.revision) return;
+  const request = state.reviewRequest;
+  review.bulkBlanking = true;
+  $('reviewError').hidden = true; $('reviewBulkStatus').textContent = '';
+  updateReviewProgress();
+  try {
+    // Collect every page before replacing choices, so a failed request cannot
+    // leave only part of the review blanked.
+    const decisions = new Map();
+    for (let offset = 0; offset < review.total;) {
+      const data = await getJson(`/api/jobs/${review.jobId}/files/${review.file.file_id}/consolidation-conflicts?offset=${offset}&limit=100`);
+      if (state.review !== review || state.reviewRequest !== request) return;
+      if (data.revision !== review.revision || data.total !== review.total) throw new Error('Review data changed. Close and reopen this dialog.');
+      if (!data.patients.length) throw new Error('Could not load all review fields. Try again.');
+      for (const patient of data.patients) {
+        for (const field of patient.fields) {
+          decisions.set(reviewKey(patient.local_patient_id, field.field),
+            { local_patient_id: patient.local_patient_id, field: field.field, value: '' });
+        }
+      }
+      offset += data.patients.length;
+    }
+    if (decisions.size !== review.totalFields) throw new Error('Review fields changed. Close and reopen this dialog.');
+    review.decisions = decisions;
+    $('reviewPatients').querySelectorAll('select').forEach(select => { select.value = 'blank'; });
+    $('reviewBulkStatus').textContent = `All ${decisions.size} review fields are set to Leave blank. You can change individual choices before confirming.`;
+  } catch (error) {
+    if (state.review !== review || state.reviewRequest !== request) return;
+    $('reviewError').textContent = `${error.message} Existing choices have been kept.`;
+    $('reviewError').hidden = false;
+  } finally {
+    if (state.review === review) { review.bulkBlanking = false; updateReviewProgress(); }
+  }
+}
+
+$('reviewBlankAll').addEventListener('click', leaveAllReviewFieldsBlank);
+$('closeReview').addEventListener('click', () => { if (!state.review?.saving) $('reviewDialog').close(); });
+$('reviewDialog').addEventListener('cancel', event => { if (state.review?.saving) event.preventDefault(); });
+$('reviewDialog').addEventListener('close', () => { state.review = null; state.reviewRequest++; });
+$('reviewPrevious').addEventListener('click', () => { if (state.review) { state.review.offset = Math.max(0, state.review.offset - state.review.pageSize); loadConsolidationPage(); } });
+$('reviewNext').addEventListener('click', () => { if (state.review) { state.review.offset += state.review.pageSize; loadConsolidationPage(); } });
+$('reviewConfirm').addEventListener('click', async () => {
+  const review = state.review;
+  if (!review || review.loading || review.failed || review.saving || review.bulkBlanking || !review.revision || review.decisions.size !== review.totalFields) return;
+  review.saving = true; updateReviewProgress(); $('reviewError').hidden = true;
+  $('reviewConfirm').textContent = 'Saving decisions…';
+  try {
+    const response = await fetch(`/api/jobs/${review.jobId}/files/${review.file.file_id}/consolidation-resolutions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revision: review.revision, decisions: [...review.decisions.values()] }),
+      signal: AbortSignal.timeout(30000)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Could not save the review decisions.');
+    review.saving = false; $('reviewDialog').close(); renderJob(data);
+    state.busy = true; updateControls(); $('progressBlock').hidden = false;
+    $('progressLabel').textContent = 'Generating tokens from the confirmed patient details…';
+    const completed = await pollJob(review.jobId);
+    $('progressLabel').textContent = completed.status === 'awaiting_review' ? 'Further local review is required. Check the file below.' : 'Token generation finished.';
+  } catch (error) {
+    if (state.review === review) {
+      review.saving = false; $('reviewError').textContent = error.message; $('reviewError').hidden = false;
+      $('reviewConfirm').textContent = 'Confirm and generate tokens'; updateReviewProgress();
+    } else setError(error.message);
+  } finally {
+    state.busy = false; updateControls();
+  }
+});
 
 
 function addBrokerControls(card, file, jobId) {
